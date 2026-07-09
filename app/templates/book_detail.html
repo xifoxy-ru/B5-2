@@ -1,4 +1,49 @@
 {% extends "base.html" %}
 
+{% block title %}
+{% if book %}{{ book.title }} - B5-2 Book CRUD{% else %}Book Not Found - B5-2 Book CRUD{% endif %}
+{% endblock %}
+
 {% block content %}
+{% if book %}
+<h1>{{ book.title }}</h1>
+
+<dl class="detail-list">
+    <dt>Book ID</dt>
+    <dd>{{ book.book_id }}</dd>
+
+    <dt>Title</dt>
+    <dd>{{ book.title }}</dd>
+
+    <dt>Author</dt>
+    <dd>{{ book.author.author_name if book.author else "Unknown author" }}</dd>
+
+    <dt>Category</dt>
+    <dd>{{ book.category.category_name if book.category else "Unknown category" }}</dd>
+
+    <dt>Published Year</dt>
+    <dd>{{ book.published_year }}</dd>
+
+    <dt>Price</dt>
+    <dd>{{ "%.2f"|format(book.price) }}</dd>
+
+    <dt>Stock Quantity</dt>
+    <dd>{{ book.stock_quantity }}</dd>
+
+    <dt>ISBN</dt>
+    <dd>{{ book.isbn }}</dd>
+</dl>
+
+<div class="actions">
+    <a class="button secondary" href="/books">Back to List</a>
+    <a class="button" href="/books/{{ book.book_id }}/edit">Edit</a>
+    <form action="/books/{{ book.book_id }}/delete" method="post">
+        <button class="danger" type="submit">Delete</button>
+    </form>
+</div>
+{% else %}
+<h1>Book Not Found</h1>
+<p class="notice">The requested book could not be found.</p>
+<p><a href="/books">Back to List</a></p>
+{% endif %}
 {% endblock %}

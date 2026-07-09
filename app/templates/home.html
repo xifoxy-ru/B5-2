@@ -1,4 +1,14 @@
 {% extends "base.html" %}
 
+{% block title %}Home - B5-2 Book CRUD{% endblock %}
+
 {% block content %}
+<h1>{{ title | default("Library Book Manager") }}</h1>
+<p>{{ description | default("A server-rendered Book CRUD app for managing library books.") }}</p>
+<p>This Library Book Manager lets you create, view, update, search, and delete book records.</p>
+
+<div class="actions">
+    <a class="button" href="/books">View Book List</a>
+    <a class="button secondary" href="/books/new">Create New Book</a>
+</div>
 {% endblock %}

@@ -1,4 +1,51 @@
 {% extends "base.html" %}
 
+{% block title %}Book List - B5-2 Book CRUD{% endblock %}
+
 {% block content %}
+<h1>Book List</h1>
+
+<form action="/books" method="get" class="actions">
+    <label for="q">Search by title</label>
+    <input id="q" name="q" type="search" value="{{ q | default('') }}" placeholder="Book title">
+    <button type="submit">Search</button>
+    <a class="button secondary" href="/books">Clear</a>
+</form>
+
+<div class="actions">
+    <a class="button" href="/books/new">Create New Book</a>
+</div>
+
+{% if books %}
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Author</th>
+            <th>Category</th>
+            <th>Year</th>
+            <th>Price</th>
+            <th>Stock</th>
+            <th>ISBN</th>
+            <th>Detail</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for book in books %}
+        <tr>
+            <td>{{ book.title }}</td>
+            <td>{{ book.author.author_name if book.author else "Unknown author" }}</td>
+            <td>{{ book.category.category_name if book.category else "Unknown category" }}</td>
+            <td>{{ book.published_year }}</td>
+            <td>{{ "%.2f"|format(book.price) }}</td>
+            <td>{{ book.stock_quantity }}</td>
+            <td>{{ book.isbn }}</td>
+            <td><a href="/books/{{ book.book_id }}">View</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="empty">No books found. Create a new book to get started.</p>
+{% endif %}
 {% endblock %}

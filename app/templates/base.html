@@ -2,9 +2,169 @@
 <html lang="ko">
 <head>
     <meta charset="utf-8">
-    <title>B5-2 Book CRUD</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}B5-2 Book CRUD{% endblock %}</title>
+    <style>
+        :root {
+            color: #1f2937;
+            background: #f8fafc;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        body {
+            margin: 0;
+        }
+
+        header {
+            background: #ffffff;
+            border-bottom: 1px solid #d1d5db;
+        }
+
+        nav,
+        main {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 16px 20px;
+        }
+
+        nav {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        nav .brand {
+            font-weight: 700;
+            margin-right: 12px;
+        }
+
+        a {
+            color: #1d4ed8;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        h1 {
+            margin: 0 0 12px;
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 16px 0;
+        }
+
+        .button,
+        button {
+            display: inline-block;
+            border: 1px solid #1d4ed8;
+            border-radius: 6px;
+            background: #1d4ed8;
+            color: #ffffff;
+            cursor: pointer;
+            font: inherit;
+            padding: 8px 12px;
+        }
+
+        .button.secondary,
+        button.secondary {
+            background: #ffffff;
+            color: #1d4ed8;
+        }
+
+        .button.danger,
+        button.danger {
+            background: #b91c1c;
+            border-color: #b91c1c;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #ffffff;
+        }
+
+        th,
+        td {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 10px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f3f4f6;
+            font-weight: 700;
+        }
+
+        .empty,
+        .notice {
+            background: #ffffff;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 16px;
+        }
+
+        .field {
+            margin-bottom: 14px;
+        }
+
+        label {
+            display: block;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        input,
+        select {
+            box-sizing: border-box;
+            max-width: 420px;
+            width: 100%;
+            border: 1px solid #9ca3af;
+            border-radius: 6px;
+            font: inherit;
+            padding: 8px 10px;
+        }
+
+        .error {
+            color: #b91c1c;
+            font-size: 0.92rem;
+            margin-top: 4px;
+        }
+
+        .detail-list {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 14px 18px;
+        }
+
+        .detail-list dt {
+            font-weight: 700;
+            margin-top: 10px;
+        }
+
+        .detail-list dd {
+            margin: 4px 0 10px;
+        }
+    </style>
 </head>
 <body>
-    {% block content %}{% endblock %}
+    <header>
+        <nav>
+            <span class="brand">B5-2 Book CRUD</span>
+            <a href="/">Home</a>
+            <a href="/books">Book List</a>
+            <a href="/books/new">New Book</a>
+        </nav>
+    </header>
+    <main>
+        {% block content %}{% endblock %}
+    </main>
 </body>
 </html>

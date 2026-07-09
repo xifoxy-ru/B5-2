@@ -1,4 +1,79 @@
 {% extends "base.html" %}
 
+{% block title %}
+{% if mode == "edit" %}Edit Book - B5-2 Book CRUD{% else %}New Book - B5-2 Book CRUD{% endif %}
+{% endblock %}
+
 {% block content %}
+{% set form_data = form_data | default({}) %}
+{% set errors = errors | default({}) %}
+
+<h1>{% if mode == "edit" %}Edit Book{% else %}Create New Book{% endif %}</h1>
+
+<form action="{{ action_url | default('/books') }}" method="post">
+    <div class="field">
+        <label for="title">Title</label>
+        <input id="title" name="title" type="text" value="{{ form_data.title | default('') }}">
+        {% if errors.title %}<div class="error">{{ errors.title }}</div>{% endif %}
+    </div>
+
+    <div class="field">
+        <label for="author_id">Author</label>
+        <select id="author_id" name="author_id">
+            <option value="">Select author</option>
+            {% for author in authors | default([]) %}
+            <option value="{{ author.author_id }}" {% if author.author_id|string == form_data.author_id|string %}selected{% endif %}>
+                {{ author.author_name }}
+            </option>
+            {% endfor %}
+        </select>
+        {% if errors.author_id %}<div class="error">{{ errors.author_id }}</div>{% endif %}
+    </div>
+
+    <div class="field">
+        <label for="category_id">Category</label>
+        <select id="category_id" name="category_id">
+            <option value="">Select category</option>
+            {% for category in categories | default([]) %}
+            <option value="{{ category.category_id }}" {% if category.category_id|string == form_data.category_id|string %}selected{% endif %}>
+                {{ category.category_name }}
+            </option>
+            {% endfor %}
+        </select>
+        {% if errors.category_id %}<div class="error">{{ errors.category_id }}</div>{% endif %}
+    </div>
+
+    <div class="field">
+        <label for="published_year">Published Year</label>
+        <input id="published_year" name="published_year" type="number" value="{{ form_data.published_year | default('') }}">
+        {% if errors.published_year %}<div class="error">{{ errors.published_year }}</div>{% endif %}
+    </div>
+
+    <div class="field">
+        <label for="price">Price</label>
+        <input id="price" name="price" type="number" step="0.01" min="0" value="{{ form_data.price | default('') }}">
+        {% if errors.price %}<div class="error">{{ errors.price }}</div>{% endif %}
+    </div>
+
+    <div class="field">
+        <label for="stock_quantity">Stock Quantity</label>
+        <input id="stock_quantity" name="stock_quantity" type="number" min="0" value="{{ form_data.stock_quantity | default('') }}">
+        {% if errors.stock_quantity %}<div class="error">{{ errors.stock_quantity }}</div>{% endif %}
+    </div>
+
+    <div class="field">
+        <label for="isbn">ISBN</label>
+        <input id="isbn" name="isbn" type="text" value="{{ form_data.isbn | default('') }}">
+        {% if errors.isbn %}<div class="error">{{ errors.isbn }}</div>{% endif %}
+    </div>
+
+    <div class="actions">
+        <button type="submit">{% if mode == "edit" %}Update Book{% else %}Create Book{% endif %}</button>
+        {% if mode == "edit" and book_id %}
+        <a class="button secondary" href="/books/{{ book_id }}">Cancel</a>
+        {% else %}
+        <a class="button secondary" href="/books">Cancel</a>
+        {% endif %}
+    </div>
+</form>
 {% endblock %}
