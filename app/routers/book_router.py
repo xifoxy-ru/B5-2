@@ -120,7 +120,7 @@ def book_detail(
 ):
     book = book_service.get_book_detail(db, book_id)
     if book is None:
-        return RedirectResponse("/books", status_code=303)
+        return _book_not_found_response(request)
 
     return templates.TemplateResponse(
         request,
@@ -139,7 +139,7 @@ def edit_book_form(
 ):
     book = book_service.get_book_detail(db, book_id)
     if book is None:
-        return RedirectResponse("/books", status_code=303)
+        return _book_not_found_response(request)
 
     options = book_service.get_book_form_options(db)
     return templates.TemplateResponse(
@@ -208,6 +208,19 @@ def update_book(
 def delete_book(book_id: int, db: Session = Depends(get_db)):
     book_service.delete_book(db, book_id)
     return RedirectResponse("/books", status_code=303)
+
+
+def _book_not_found_response(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "error.html",
+        {
+            "status_code": 404,
+            "message": "Book not found.",
+            "detail": "Book not found.",
+        },
+        status_code=404,
+    )
 
 
 def _empty_book_form_data() -> dict[str, str]:
