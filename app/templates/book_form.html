@@ -13,7 +13,7 @@
 <form action="{{ action_url | default('/books') }}" method="post">
     <div class="field">
         <label for="title">Title</label>
-        <input id="title" name="title" type="text" value="{{ form_data.title | default('') }}">
+        <input id="title" name="title" type="text" maxlength="200" value="{{ form_data.title | default('') }}">
         {% if errors.title %}<div class="error">{{ errors.title }}</div>{% endif %}
     </div>
 
@@ -45,25 +45,25 @@
 
     <div class="field">
         <label for="published_year">Published Year</label>
-        <input id="published_year" name="published_year" type="number" value="{{ form_data.published_year | default('') }}">
+        <input id="published_year" name="published_year" type="number" min="1000" max="{{ current_year | default(2100) }}" value="{{ form_data.published_year | default('') }}">
         {% if errors.published_year %}<div class="error">{{ errors.published_year }}</div>{% endif %}
     </div>
 
     <div class="field">
         <label for="price">Price</label>
-        <input id="price" name="price" type="number" step="0.01" min="0" value="{{ form_data.price | default('') }}">
+        <input id="price" name="price" type="number" step="0.01" min="0" max="10000000" value="{{ form_data.price | default('') }}">
         {% if errors.price %}<div class="error">{{ errors.price }}</div>{% endif %}
     </div>
 
     <div class="field">
         <label for="stock_quantity">Stock Quantity</label>
-        <input id="stock_quantity" name="stock_quantity" type="number" min="0" value="{{ form_data.stock_quantity | default('') }}">
+        <input id="stock_quantity" name="stock_quantity" type="number" min="0" max="100000" step="1" value="{{ form_data.stock_quantity | default('') }}">
         {% if errors.stock_quantity %}<div class="error">{{ errors.stock_quantity }}</div>{% endif %}
     </div>
 
     <div class="field">
         <label for="isbn">ISBN</label>
-        <input id="isbn" name="isbn" type="text" value="{{ form_data.isbn | default('') }}">
+        <input id="isbn" name="isbn" type="text" maxlength="20" pattern="[0-9-]+" title="Use 10 or 13 digits, with optional single hyphens between digit groups." value="{{ form_data.isbn | default('') }}">
         {% if errors.isbn %}<div class="error">{{ errors.isbn }}</div>{% endif %}
     </div>
 

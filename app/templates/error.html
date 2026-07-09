@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+
+{% block title %}{{ status_code }} - B5-2 Book CRUD{% endblock %}
+
+{% block content %}
+<h1>{{ message }}</h1>
+<p class="notice">{{ detail }}</p>
+<div class="actions">
+    <a class="button secondary" href="/">Home</a>
+    <a class="button" href="/books">Book List</a>
+</div>
+{% endblock %}

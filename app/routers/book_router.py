@@ -8,10 +8,20 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.book import Book
 from app.services import book_service
-from app.services.book_service import BookValidationError
+from app.services.book_service import BookValidationError, MAX_FUTURE_PUBLICATION_YEAR
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+
+
+def format_price(value: Any) -> str:
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return "0.00"
+
+
+templates.env.filters["format_price"] = format_price
 
 
 @router.get("/")
@@ -55,6 +65,7 @@ def new_book_form(request: Request, db: Session = Depends(get_db)):
             "action_url": "/books",
             "form_data": _empty_book_form_data(),
             "errors": {},
+            "current_year": MAX_FUTURE_PUBLICATION_YEAR,
         },
     )
 
@@ -62,13 +73,13 @@ def new_book_form(request: Request, db: Session = Depends(get_db)):
 @router.post("/books")
 def create_book(
     request: Request,
-    title: Annotated[str, Form(...)],
-    author_id: Annotated[str, Form(...)],
-    category_id: Annotated[str, Form(...)],
-    published_year: Annotated[str, Form(...)],
-    price: Annotated[str, Form(...)],
-    stock_quantity: Annotated[str, Form(...)],
-    isbn: Annotated[str, Form(...)],
+    title: Annotated[str, Form()] = "",
+    author_id: Annotated[str, Form()] = "",
+    category_id: Annotated[str, Form()] = "",
+    published_year: Annotated[str, Form()] = "",
+    price: Annotated[str, Form()] = "",
+    stock_quantity: Annotated[str, Form()] = "",
+    isbn: Annotated[str, Form()] = "",
     db: Session = Depends(get_db),
 ):
     form_data = _book_form_data(
@@ -94,6 +105,7 @@ def create_book(
                 "action_url": "/books",
                 "form_data": form_data,
                 "errors": exc.errors,
+                "current_year": MAX_FUTURE_PUBLICATION_YEAR,
             },
         )
 
@@ -140,6 +152,7 @@ def edit_book_form(
             "action_url": f"/books/{book_id}/edit",
             "form_data": _book_to_form_data(book),
             "errors": {},
+            "current_year": MAX_FUTURE_PUBLICATION_YEAR,
         },
     )
 
@@ -148,13 +161,13 @@ def edit_book_form(
 def update_book(
     request: Request,
     book_id: int,
-    title: Annotated[str, Form(...)],
-    author_id: Annotated[str, Form(...)],
-    category_id: Annotated[str, Form(...)],
-    published_year: Annotated[str, Form(...)],
-    price: Annotated[str, Form(...)],
-    stock_quantity: Annotated[str, Form(...)],
-    isbn: Annotated[str, Form(...)],
+    title: Annotated[str, Form()] = "",
+    author_id: Annotated[str, Form()] = "",
+    category_id: Annotated[str, Form()] = "",
+    published_year: Annotated[str, Form()] = "",
+    price: Annotated[str, Form()] = "",
+    stock_quantity: Annotated[str, Form()] = "",
+    isbn: Annotated[str, Form()] = "",
     db: Session = Depends(get_db),
 ):
     form_data = _book_form_data(
@@ -181,6 +194,7 @@ def update_book(
                 "action_url": f"/books/{book_id}/edit",
                 "form_data": form_data,
                 "errors": exc.errors,
+                "current_year": MAX_FUTURE_PUBLICATION_YEAR,
             },
         )
 

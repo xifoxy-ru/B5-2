@@ -37,7 +37,7 @@
             <td>{{ book.author.author_name if book.author else "Unknown author" }}</td>
             <td>{{ book.category.category_name if book.category else "Unknown category" }}</td>
             <td>{{ book.published_year }}</td>
-            <td>{{ "%.2f"|format(book.price) }}</td>
+            <td>{{ book.price | format_price }}</td>
             <td>{{ book.stock_quantity }}</td>
             <td>{{ book.isbn }}</td>
             <td><a href="/books/{{ book.book_id }}">View</a></td>

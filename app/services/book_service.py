@@ -1,4 +1,6 @@
-import math
+from datetime import date
+from decimal import Decimal, InvalidOperation
+import re
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -7,6 +9,12 @@ from app.models.author import Author
 from app.models.book import Book
 from app.models.category import Category
 from app.repositories import author_repository, book_repository, category_repository
+
+CURRENT_YEAR = date.today().year
+MAX_FUTURE_PUBLICATION_YEAR = CURRENT_YEAR + 1
+MAX_PRICE = Decimal("10000000")
+MAX_STOCK_QUANTITY = 100000
+ISBN_PATTERN = re.compile(r"^[0-9-]+$")
 
 
 class BookValidationError(Exception):
@@ -61,25 +69,19 @@ def _validate_book_data(
 ) -> dict[str, Any]:
     errors: dict[str, str] = {}
 
-    title = _clean_required_text(data, "title", errors)
-    isbn = _clean_required_text(data, "isbn", errors)
+    title = _clean_title(data, errors)
+    isbn = _clean_isbn(data, errors)
     author_id = _parse_required_int(data, "author_id", errors)
     category_id = _parse_required_int(data, "category_id", errors)
     published_year = _parse_required_int(data, "published_year", errors)
-    price = _parse_required_float(data, "price", errors)
+    price = _parse_required_price(data, errors)
     stock_quantity = _parse_required_int(data, "stock_quantity", errors)
 
-    if published_year is not None and published_year <= 0:
-        errors["published_year"] = "Published year must be a positive integer."
+    if published_year is not None and not (1000 <= published_year <= MAX_FUTURE_PUBLICATION_YEAR):
+        errors["published_year"] = f"Published year must be between 1000 and {MAX_FUTURE_PUBLICATION_YEAR}."
 
-    if price is not None:
-        if not math.isfinite(price):
-            errors["price"] = "This field must be numeric."
-        elif price < 0:
-            errors["price"] = "Price must be 0 or greater."
-
-    if stock_quantity is not None and stock_quantity < 0:
-        errors["stock_quantity"] = "Stock quantity must be 0 or greater."
+    if stock_quantity is not None and not (0 <= stock_quantity <= MAX_STOCK_QUANTITY):
+        errors["stock_quantity"] = f"Stock quantity must be between 0 and {MAX_STOCK_QUANTITY}."
 
     if author_id is not None and author_repository.get_author(db, author_id) is None:
         errors["author_id"] = "Selected author does not exist."
@@ -100,28 +102,52 @@ def _validate_book_data(
         "author_id": author_id,
         "category_id": category_id,
         "published_year": published_year,
-        "price": price,
+        "price": float(price),
         "stock_quantity": stock_quantity,
         "isbn": isbn,
     }
 
 
-def _clean_required_text(
+def _clean_title(
     data: dict[str, Any],
-    field_name: str,
     errors: dict[str, str],
 ) -> str | None:
-    value = data.get(field_name)
+    value = data.get("title")
     if value is None:
-        errors[field_name] = "This field is required."
+        errors["title"] = "This field is required."
         return None
 
-    text = str(value).strip()
+    text = " ".join(str(value).strip().split())
     if not text:
-        errors[field_name] = "This field is required."
+        errors["title"] = "This field is required."
         return None
 
     return text
+
+
+def _clean_isbn(data: dict[str, Any], errors: dict[str, str]) -> str | None:
+    value = data.get("isbn")
+    if value is None:
+        errors["isbn"] = "This field is required."
+        return None
+
+    isbn = str(value).strip()
+    if not isbn:
+        errors["isbn"] = "This field is required."
+        return None
+
+    if (
+        any(character.isspace() for character in isbn)
+        or not ISBN_PATTERN.fullmatch(isbn)
+        or isbn.startswith("-")
+        or isbn.endswith("-")
+        or "--" in isbn
+        or len(isbn.replace("-", "")) not in {10, 13}
+    ):
+        errors["isbn"] = "ISBN must contain 10 or 13 digits and may use single hyphens between digit groups."
+        return None
+
+    return isbn
 
 
 def _parse_required_int(
@@ -141,18 +167,31 @@ def _parse_required_int(
         return None
 
 
-def _parse_required_float(
+def _parse_required_price(
     data: dict[str, Any],
-    field_name: str,
     errors: dict[str, str],
-) -> float | None:
-    value = data.get(field_name)
+) -> Decimal | None:
+    value = data.get("price")
     if value is None or str(value).strip() == "":
-        errors[field_name] = "This field is required."
+        errors["price"] = "This field is required."
         return None
 
     try:
-        return float(str(value).strip())
-    except ValueError:
-        errors[field_name] = "This field must be numeric."
+        price = Decimal(str(value).strip())
+    except InvalidOperation:
+        errors["price"] = "This field must be numeric."
         return None
+
+    if not price.is_finite():
+        errors["price"] = "This field must be numeric."
+        return None
+
+    if price < 0 or price > MAX_PRICE:
+        errors["price"] = f"Price must be between 0 and {MAX_PRICE}."
+        return None
+
+    if price.as_tuple().exponent < -2:
+        errors["price"] = "Price may have at most 2 decimal places."
+        return None
+
+    return price

@@ -25,7 +25,7 @@
     <dd>{{ book.published_year }}</dd>
 
     <dt>Price</dt>
-    <dd>{{ "%.2f"|format(book.price) }}</dd>
+    <dd>{{ book.price | format_price }}</dd>
 
     <dt>Stock Quantity</dt>
     <dd>{{ book.stock_quantity }}</dd>
