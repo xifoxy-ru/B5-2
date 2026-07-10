@@ -30,7 +30,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
         return _render_error_page(
             request=request,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             message=INVALID_REQUEST_MESSAGE,
         )
 

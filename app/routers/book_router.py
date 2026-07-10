@@ -8,7 +8,8 @@ from app.config import APP_TITLE, BOOK_LIST_URL, BOOK_NOT_FOUND_MESSAGE, ERROR_T
 from app.database import get_db
 from app.models.book import Book
 from app.services import book_service
-from app.services.book_service import BookValidationError, MAX_FUTURE_PUBLICATION_YEAR
+from app.services.book_service import BookValidationError
+from app.services.book_validation_policy import MAX_FUTURE_PUBLICATION_YEAR
 from app.template_config import templates
 
 

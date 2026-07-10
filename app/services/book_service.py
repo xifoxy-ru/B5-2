@@ -1,6 +1,4 @@
-from datetime import date
 from decimal import Decimal, InvalidOperation
-import re
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -9,20 +7,17 @@ from app.models.author import Author
 from app.models.book import Book
 from app.models.category import Category
 from app.repositories import author_repository, book_repository, category_repository
-
-CURRENT_YEAR = date.today().year
-MIN_PUBLISHED_YEAR = 1000
-MAX_FUTURE_PUBLICATION_YEAR_OFFSET = 1
-MAX_FUTURE_PUBLICATION_YEAR = CURRENT_YEAR + MAX_FUTURE_PUBLICATION_YEAR_OFFSET
-MIN_PRICE = Decimal("0")
-MAX_PRICE = Decimal("10000000")
-MAX_PRICE_DECIMAL_PLACES = 2
-MIN_STOCK_QUANTITY = 0
-MAX_STOCK_QUANTITY = 100_000
-ISBN_10_LENGTH = 10
-ISBN_13_LENGTH = 13
-VALID_ISBN_DIGIT_LENGTHS = {ISBN_10_LENGTH, ISBN_13_LENGTH}
-ISBN_ALLOWED_PATTERN = re.compile(r"^[0-9-]+$")
+from app.services.book_validation_policy import (
+    ISBN_ALLOWED_PATTERN,
+    MAX_FUTURE_PUBLICATION_YEAR,
+    MAX_PRICE,
+    MAX_PRICE_DECIMAL_PLACES,
+    MAX_STOCK_QUANTITY,
+    MIN_PRICE,
+    MIN_PUBLISHED_YEAR,
+    MIN_STOCK_QUANTITY,
+    VALID_ISBN_DIGIT_LENGTHS,
+)
 
 
 class BookValidationError(Exception):
