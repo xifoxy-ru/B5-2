@@ -1,27 +1,18 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Request, status
 from fastapi.responses import RedirectResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
+from app.config import APP_TITLE, BOOK_LIST_URL, BOOK_NOT_FOUND_MESSAGE, ERROR_TEMPLATE_NAME
 from app.database import get_db
 from app.models.book import Book
 from app.services import book_service
 from app.services.book_service import BookValidationError, MAX_FUTURE_PUBLICATION_YEAR
+from app.template_config import templates
+
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
-
-
-def format_price(value: Any) -> str:
-    try:
-        return f"{float(value):,.2f}"
-    except (TypeError, ValueError):
-        return "0.00"
-
-
-templates.env.filters["format_price"] = format_price
 
 
 @router.get("/")
@@ -30,7 +21,7 @@ def home(request: Request):
         request,
         "home.html",
         {
-            "title": "B5-2 Book CRUD",
+            "title": APP_TITLE,
             "description": "Server-rendered Book CRUD application",
         },
     )
@@ -62,7 +53,7 @@ def new_book_form(request: Request, db: Session = Depends(get_db)):
         {
             **options,
             "mode": "create",
-            "action_url": "/books",
+            "action_url": BOOK_LIST_URL,
             "form_data": _empty_book_form_data(),
             "errors": {},
             "current_year": MAX_FUTURE_PUBLICATION_YEAR,
@@ -102,14 +93,14 @@ def create_book(
             {
                 **options,
                 "mode": "create",
-                "action_url": "/books",
+                "action_url": BOOK_LIST_URL,
                 "form_data": form_data,
                 "errors": exc.errors,
                 "current_year": MAX_FUTURE_PUBLICATION_YEAR,
             },
         )
 
-    return RedirectResponse(f"/books/{created_book.book_id}", status_code=303)
+    return RedirectResponse(f"/books/{created_book.book_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/books/{book_id}")
@@ -199,27 +190,27 @@ def update_book(
         )
 
     if updated_book is None:
-        return RedirectResponse("/books", status_code=303)
+        return RedirectResponse(BOOK_LIST_URL, status_code=status.HTTP_303_SEE_OTHER)
 
-    return RedirectResponse(f"/books/{updated_book.book_id}", status_code=303)
+    return RedirectResponse(f"/books/{updated_book.book_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/books/{book_id}/delete")
 def delete_book(book_id: int, db: Session = Depends(get_db)):
     book_service.delete_book(db, book_id)
-    return RedirectResponse("/books", status_code=303)
+    return RedirectResponse(BOOK_LIST_URL, status_code=status.HTTP_303_SEE_OTHER)
 
 
 def _book_not_found_response(request: Request):
     return templates.TemplateResponse(
         request,
-        "error.html",
+        ERROR_TEMPLATE_NAME,
         {
-            "status_code": 404,
-            "message": "Book not found.",
-            "detail": "Book not found.",
+            "status_code": status.HTTP_404_NOT_FOUND,
+            "message": BOOK_NOT_FOUND_MESSAGE,
+            "detail": BOOK_NOT_FOUND_MESSAGE,
         },
-        status_code=404,
+        status_code=status.HTTP_404_NOT_FOUND,
     )
 
 

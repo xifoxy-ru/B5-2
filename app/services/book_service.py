@@ -11,10 +11,18 @@ from app.models.category import Category
 from app.repositories import author_repository, book_repository, category_repository
 
 CURRENT_YEAR = date.today().year
-MAX_FUTURE_PUBLICATION_YEAR = CURRENT_YEAR + 1
+MIN_PUBLISHED_YEAR = 1000
+MAX_FUTURE_PUBLICATION_YEAR_OFFSET = 1
+MAX_FUTURE_PUBLICATION_YEAR = CURRENT_YEAR + MAX_FUTURE_PUBLICATION_YEAR_OFFSET
+MIN_PRICE = Decimal("0")
 MAX_PRICE = Decimal("10000000")
-MAX_STOCK_QUANTITY = 100000
-ISBN_PATTERN = re.compile(r"^[0-9-]+$")
+MAX_PRICE_DECIMAL_PLACES = 2
+MIN_STOCK_QUANTITY = 0
+MAX_STOCK_QUANTITY = 100_000
+ISBN_10_LENGTH = 10
+ISBN_13_LENGTH = 13
+VALID_ISBN_DIGIT_LENGTHS = {ISBN_10_LENGTH, ISBN_13_LENGTH}
+ISBN_ALLOWED_PATTERN = re.compile(r"^[0-9-]+$")
 
 
 class BookValidationError(Exception):
@@ -77,11 +85,13 @@ def _validate_book_data(
     price = _parse_required_price(data, errors)
     stock_quantity = _parse_required_int(data, "stock_quantity", errors)
 
-    if published_year is not None and not (1000 <= published_year <= MAX_FUTURE_PUBLICATION_YEAR):
-        errors["published_year"] = f"Published year must be between 1000 and {MAX_FUTURE_PUBLICATION_YEAR}."
+    if published_year is not None and not (MIN_PUBLISHED_YEAR <= published_year <= MAX_FUTURE_PUBLICATION_YEAR):
+        errors["published_year"] = (
+            f"Published year must be between {MIN_PUBLISHED_YEAR} and {MAX_FUTURE_PUBLICATION_YEAR}."
+        )
 
-    if stock_quantity is not None and not (0 <= stock_quantity <= MAX_STOCK_QUANTITY):
-        errors["stock_quantity"] = f"Stock quantity must be between 0 and {MAX_STOCK_QUANTITY}."
+    if stock_quantity is not None and not (MIN_STOCK_QUANTITY <= stock_quantity <= MAX_STOCK_QUANTITY):
+        errors["stock_quantity"] = f"Stock quantity must be between {MIN_STOCK_QUANTITY} and {MAX_STOCK_QUANTITY}."
 
     if author_id is not None and author_repository.get_author(db, author_id) is None:
         errors["author_id"] = "Selected author does not exist."
@@ -138,11 +148,11 @@ def _clean_isbn(data: dict[str, Any], errors: dict[str, str]) -> str | None:
 
     if (
         any(character.isspace() for character in isbn)
-        or not ISBN_PATTERN.fullmatch(isbn)
+        or not ISBN_ALLOWED_PATTERN.fullmatch(isbn)
         or isbn.startswith("-")
         or isbn.endswith("-")
         or "--" in isbn
-        or len(isbn.replace("-", "")) not in {10, 13}
+        or len(isbn.replace("-", "")) not in VALID_ISBN_DIGIT_LENGTHS
     ):
         errors["isbn"] = "ISBN must contain 10 or 13 digits and may use single hyphens between digit groups."
         return None
@@ -186,12 +196,12 @@ def _parse_required_price(
         errors["price"] = "This field must be numeric."
         return None
 
-    if price < 0 or price > MAX_PRICE:
-        errors["price"] = f"Price must be between 0 and {MAX_PRICE}."
+    if price < MIN_PRICE or price > MAX_PRICE:
+        errors["price"] = f"Price must be between {MIN_PRICE} and {MAX_PRICE}."
         return None
 
-    if price.as_tuple().exponent < -2:
-        errors["price"] = "Price may have at most 2 decimal places."
+    if price.as_tuple().exponent < -MAX_PRICE_DECIMAL_PLACES:
+        errors["price"] = f"Price may have at most {MAX_PRICE_DECIMAL_PLACES} decimal places."
         return None
 
     return price
