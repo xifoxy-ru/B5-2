@@ -1,309 +1,155 @@
-# B5-2 Library Book Manager
+# Book CRUD 웹 애플리케이션
 
-B5-2 Library Book Manager는 FastAPI, Jinja2, SQLite, SQLAlchemy로 만든 서버 사이드 렌더링 Book CRUD 웹 애플리케이션입니다.
+## 프로젝트 소개
 
-이 프로젝트의 CRUD 대상은 `Book`만입니다. `Author`와 `Category`는 seed/reference table로 사용하며, Book 등록/수정 form의 select box에 표시됩니다.
+FastAPI로 만든 도서 관리 웹 애플리케이션입니다. Jinja2로 HTML을 서버 사이드 렌더링하고, SQLAlchemy ORM과 SQLite를 사용해 데이터를 저장합니다. 도서 등록, 목록 및 상세 조회, 수정, 삭제와 제목 검색을 제공합니다.
 
-## Scope
+## 주요 기능
 
-B5-2는 B5-1의 도서관 DB 전체를 구현하지 않습니다. B5-1 주제에서 B5-2에 필요한 최소 범위인 `books`, `authors`, `categories`만 가져왔습니다.
+- Book 목록 조회 및 제목 검색
+- Book 등록, 상세 조회, 수정, 삭제
+- Author와 Category 선택
+- 입력값 정규화와 필드별 Validation
+- HTML 형식의 404, 405, 422 오류 화면
+- SQLite Foreign Key enforcement
+- 등록, 수정, 삭제 후 `303 See Other` Redirect
 
-B5-3로 보류한 범위:
+## 기술 스택
 
-- members
-- loans
-- authentication
-- login/logout
-- authorization
-- borrow/return workflow
-- overdue workflow
-
-## Tech Stack
-
-- Python 3.12
-- FastAPI
-- Uvicorn
-- Jinja2
+- Python
+- FastAPI 0.139.0
+- Uvicorn 0.51.0
+- SQLAlchemy 2.0.51
+- Jinja2 3.1.6
 - SQLite
-- SQLAlchemy ORM
-- python-multipart
-- uv
+- python-multipart 0.0.32
 
-주요 runtime dependency는 `requirements.txt`에 고정되어 있습니다.
-
-## Install
-
-```bash
-uv venv --python 3.12 .venv
-source .venv/bin/activate
-uv pip install -r requirements.txt
-```
-
-`uv`가 없는 환경에서는 Python 3.12 가상환경을 직접 만든 뒤 `requirements.txt`를 설치해도 됩니다.
-
-## Run
-
-```bash
-source .venv/bin/activate
-uvicorn app.main:app --reload
-```
-
-브라우저에서 다음 주소로 접속합니다.
-
-```text
-http://127.0.0.1:8000
-```
-
-앱 시작 시 `library.db`가 없으면 SQLite DB 파일이 생성되고, `authors`, `categories` seed data가 없을 때만 삽입됩니다.
-
-## Main URLs
-
-| Method | URL | Description |
-| --- | --- | --- |
-| `GET` | `/` | Home page |
-| `GET` | `/books` | Book list and title search |
-| `GET` | `/books/new` | New book form |
-| `POST` | `/books` | Create book |
-| `GET` | `/books/{book_id}` | Book detail |
-| `GET` | `/books/{book_id}/edit` | Edit book form |
-| `POST` | `/books/{book_id}/edit` | Update book |
-| `POST` | `/books/{book_id}/delete` | Delete book |
-
-Delete는 POST form으로만 처리합니다. GET delete route는 없습니다.
-
-## Project Structure
+## 프로젝트 구조
 
 ```text
 app/
-├── __init__.py
-├── main.py
-├── database.py
-├── models/
-│   ├── __init__.py
-│   ├── author.py
-│   ├── category.py
-│   └── book.py
-├── repositories/
-│   ├── __init__.py
-│   ├── author_repository.py
-│   ├── category_repository.py
-│   └── book_repository.py
-├── services/
-│   ├── __init__.py
-│   └── book_service.py
-├── routers/
-│   ├── __init__.py
-│   └── book_router.py
-└── templates/
-    ├── base.html
-    ├── home.html
-    ├── book_list.html
-    ├── book_detail.html
-    ├── book_form.html
-    └── error.html
+├── main.py                 # 애플리케이션 생성과 구성 요소 등록
+├── config.py               # 애플리케이션 설정값과 메시지
+├── database.py             # Engine, Session, DB 초기화와 SQLite 연결 설정
+├── exception_handlers.py   # HTML 오류 응답 처리
+├── template_config.py      # Jinja2 Template 설정
+├── models/                 # SQLAlchemy 테이블과 관계 정의
+├── repositories/           # 데이터 조회와 저장
+├── routers/                # HTTP 요청, Form, 응답과 Redirect 처리
+├── schemas/                # Book Form 입력 데이터 구조
+├── services/               # 업무 흐름, Validation과 정규화
+└── templates/              # 서버에서 렌더링하는 HTML Template
+scripts/
+└── regression_check.py     # 직접 실행하는 회귀 검증 스크립트
+requirements.txt            # Python Dependency 목록
+library.db                  # SQLite 데이터베이스 파일
 ```
 
-Layer responsibility:
-
-- `routers/`: HTTP boundary, `Request`, `Form`, `TemplateResponse`, `RedirectResponse`
-- `services/`: validation and application workflow
-- `repositories/`: SQLAlchemy query and persistence only
-- `models/`: SQLAlchemy ORM models only
-- `templates/`: Jinja2 SSR pages
-- `database.py`: engine, `SessionLocal`, `Base`, `get_db`, init/seed functions
-
-## Database Tables
-
-SQLite database URL:
+## 실행 구조
 
 ```text
-sqlite:///./library.db
+HTTP/Form
+-> Router
+-> Service
+-> Repository
+-> SQLAlchemy ORM / SQLite
+
+Router
+-> Jinja2 Template
 ```
 
-### authors
+- Router는 요청과 Form을 받고 응답 또는 Redirect를 반환합니다.
+- 중앙 Router는 Home Router와 `/books` prefix를 사용하는 Book Router를 조립합니다.
+- Service는 입력값 Validation, 정규화와 Book 업무 흐름을 담당합니다.
+- Repository는 SQLAlchemy ORM을 통한 데이터 조회와 저장을 담당합니다.
+- Model은 테이블과 관계를 정의합니다.
+- Template은 Router가 준비한 데이터를 HTML 화면으로 렌더링합니다.
 
-| Column | Description |
-| --- | --- |
-| `author_id` | Primary key |
-| `author_name` | Required, unique |
-| `nationality` | Optional |
+## 설치
 
-### categories
-
-| Column | Description |
-| --- | --- |
-| `category_id` | Primary key |
-| `category_name` | Required, unique |
-| `description` | Optional |
-
-### books
-
-| Column | Description |
-| --- | --- |
-| `book_id` | Primary key |
-| `title` | Required |
-| `author_id` | Required FK to `authors.author_id` |
-| `category_id` | Required FK to `categories.category_id` |
-| `published_year` | Required integer |
-| `price` | Required float |
-| `stock_quantity` | Required integer, default `1` |
-| `isbn` | Required, unique |
-
-Relationships:
-
-- `Author.books`
-- `Category.books`
-- `Book.author`
-- `Book.category`
-
-## Features
-
-- Server-rendered HTML pages with Jinja2
-- Book list
-- Title search
-- Book detail page
-- Book create form
-- Book edit form
-- Book delete via POST form
-- Author/category select boxes
-- Field-level validation errors
-- HTML error pages for common browser errors
-- Price display with thousands separators
-
-## Input Validation Policy
-
-Validation is enforced in `app/services/book_service.py`.
-
-### title
-
-- Required
-- Leading/trailing whitespace is trimmed
-- Consecutive internal whitespace is collapsed to one space
-- Blank title is rejected
-- Title is not unique
-
-Examples:
-
-```text
-"     1     2" -> "1 2"
-"  1 2 " -> "1 2"
-```
-
-### isbn
-
-- Required
-- Leading/trailing whitespace is trimmed
-- Internal whitespace is rejected
-- Only digits and hyphens are allowed
-- Must not start or end with a hyphen
-- Must not contain consecutive hyphens
-- Hyphens are ignored for length checking
-- Digit length must be exactly 10 or 13
-- Duplicate ISBN is rejected
-- ISBN checksum validation is not implemented in B5-2
-- ISBN-10 `X` suffix is not allowed in B5-2
-
-Allowed examples:
-
-```text
-9788979140630
-978-89-7914-063-0
-0132350882
-0-13-235088-2
-```
-
-Rejected examples:
-
-```text
-0
-1
-2.0
-0.2
-1234
-abc
-978.123
--9788979140630
-9788979140630-
-978--8979140630
-978 8979140630
-```
-
-### published_year
-
-- Required
-- Integer only
-- Must be between `1000` and current year + 1
-
-### price
-
-- Required
-- Numeric only
-- Must be finite
-- Must be `0` or greater
-- Must be less than or equal to `10000000`
-- Allows at most 2 decimal places
-
-### stock_quantity
-
-- Required
-- Integer only
-- Must be `0` or greater
-- Must be less than or equal to `100000`
-- Extremely large values are rejected before reaching SQLite
-
-### author_id / category_id
-
-- Required
-- Integer only
-- Must reference existing `Author` / `Category`
-
-## Manual Test Checklist
-
-Run the app:
+프로젝트 루트에서 가상환경을 만들고 Dependency를 설치합니다.
 
 ```bash
+python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+## 실행
+
+가상환경을 활성화한 경우:
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-Checklist:
-
-- `GET /` returns the home page
-- `GET /books` returns the book list page
-- `GET /books/new` returns the create form
-- Creating a valid book redirects with `303`
-- Blank title shows an HTML form error
-- Invalid ISBN shows an HTML form error
-- Duplicate ISBN shows an HTML form error
-- Invalid year shows an HTML form error
-- Invalid price shows an HTML form error
-- Invalid stock quantity shows an HTML form error
-- Book detail page shows title, author name, category name, year, price, stock, ISBN
-- Edit form preserves current book values
-- Updating a valid book redirects with `303`
-- Delete form submits by POST and redirects with `303`
-- `GET /books/{book_id}/delete` is not a valid delete flow
-- Missing integer book detail/edit pages render HTML `404` with `Book not found.`
-- Invalid path parameters render HTML `422` with `Invalid request.`
-- Search by title filters book list
-
-Lightweight import check:
+가상환경을 활성화하지 않은 경우:
 
 ```bash
-.venv/bin/python -c "import app.main; print(app.main.app.title)"
+.venv/bin/uvicorn app.main:app --reload
 ```
 
-Expected output:
+## 접속 주소
 
-```text
-B5-2 Book CRUD
+- 홈: <http://127.0.0.1:8000/>
+- Book 목록: <http://127.0.0.1:8000/books>
+- API 문서: <http://127.0.0.1:8000/docs>
+
+## 주요 Route
+
+| Method | Path | 설명 |
+|---|---|---|
+| `GET` | `/` | 홈 화면 |
+| `GET` | `/books` | Book 목록과 제목 검색 |
+| `GET` | `/books/new` | Book 등록 Form |
+| `POST` | `/books` | Book 등록 |
+| `GET` | `/books/{book_id}` | Book 상세 조회 |
+| `GET` | `/books/{book_id}/edit` | Book 수정 Form |
+| `POST` | `/books/{book_id}/edit` | Book 수정 |
+| `POST` | `/books/{book_id}/delete` | Book 삭제 |
+
+검색은 `GET /books?q=검색어` 형식을 사용합니다. 삭제는 POST 방식만 허용하며, 등록과 수정 성공 후 해당 Book 상세 화면으로, 삭제 성공 후 Book 목록으로 `303` Redirect합니다.
+
+## 입력 Validation
+
+- 제목은 필수입니다. 앞뒤 공백을 제거하고 연속 공백을 하나로 정리하며, 최대 200자까지 허용합니다.
+- Author와 Category는 필수 정수 값이며 실제 데이터가 존재하는지 확인합니다.
+- 출판 연도는 1000 이상, 실행 시점의 현재 연도보다 1년 뒤까지 허용합니다.
+- 가격은 0 이상 10,000,000 이하이며 소수점 둘째 자리까지 허용합니다. `NaN`, `Infinity`, `-Infinity`는 허용하지 않습니다.
+- 재고는 0 이상 100,000 이하의 정수여야 합니다.
+- ISBN은 숫자 10자리 또는 13자리여야 하며 숫자 그룹 사이의 단일 하이픈만 허용합니다. 내부 공백, 시작·끝 하이픈과 연속 하이픈은 허용하지 않습니다.
+- ISBN 전체 문자열은 최대 20자이며 중복될 수 없습니다.
+- Validation 오류가 발생하면 같은 Form 화면에 원래 입력값과 필드별 오류 메시지를 표시합니다.
+
+## 데이터베이스
+
+- SQLite 파일은 프로젝트 루트의 `library.db`입니다.
+- SQLAlchemy ORM으로 `authors`, `categories`, `books` 테이블을 사용합니다.
+- Book은 Author와 Category를 Foreign Key로 참조합니다.
+- SQLite 연결이 생성될 때마다 `PRAGMA foreign_keys=ON`을 적용합니다.
+- 애플리케이션 시작 시 필요한 테이블을 생성하고, 누락된 기준 Author와 Category 데이터를 추가합니다.
+
+## 오류 처리
+
+- 존재하지 않는 페이지는 HTML `404` 화면으로 응답합니다.
+- 허용하지 않는 HTTP Method는 HTML `405` 화면으로 응답합니다.
+- 잘못된 Path Parameter는 HTML `422` 화면으로 응답합니다.
+- Form Validation 오류는 같은 Form 화면을 `200`으로 다시 렌더링하고 필드별 오류를 표시합니다.
+
+## 회귀 검증
+
+다음 명령으로 전체 회귀 검증을 한 번에 실행합니다.
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 .venv/bin/python scripts/regression_check.py
 ```
 
-## Notes
+회귀 스크립트는 다음 항목을 확인합니다.
 
-- `library.db` is created during app execution or verification.
-- `library.db` is intentionally ignored by `.gitignore`.
-- `.venv/`, `__pycache__/`, `*.pyc`, and `*.db` are ignored.
-- No authentication exists in B5-2.
-- No members or loans are implemented in B5-2.
-- No borrow/return or overdue workflow is implemented in B5-2.
+- Route, CRUD와 제목 검색
+- Redirect와 HTML 오류 화면
+- 입력값 Validation과 원래 입력값 보존
+- SQLite Foreign Key와 ISBN Unique 제약
+- 실제 `library.db`의 존재 여부, 크기와 수정 시간 유지
+
+검증 데이터는 격리된 임시 SQLite DB에 저장되며 실행이 끝나면 정리됩니다.
