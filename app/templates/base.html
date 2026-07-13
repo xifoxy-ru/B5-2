@@ -158,9 +158,9 @@
     <header>
         <nav>
             <span class="brand">B5-2 Book CRUD</span>
-            <a href="/">Home</a>
-            <a href="/books">Book List</a>
-            <a href="/books/new">New Book</a>
+            <a href="{{ request.url_for('home') }}">Home</a>
+            <a href="{{ request.url_for('book_list') }}">Book List</a>
+            <a href="{{ request.url_for('book_new') }}">New Book</a>
         </nav>
     </header>
     <main>

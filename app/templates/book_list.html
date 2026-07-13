@@ -5,15 +5,15 @@
 {% block content %}
 <h1>Book List</h1>
 
-<form action="/books" method="get" class="actions">
+<form action="{{ request.url_for('book_list') }}" method="get" class="actions">
     <label for="q">Search by title</label>
     <input id="q" name="q" type="search" value="{{ q | default('') }}" placeholder="Book title">
     <button type="submit">Search</button>
-    <a class="button secondary" href="/books">Clear</a>
+    <a class="button secondary" href="{{ request.url_for('book_list') }}">Clear</a>
 </form>
 
 <div class="actions">
-    <a class="button" href="/books/new">Create New Book</a>
+    <a class="button" href="{{ request.url_for('book_new') }}">Create New Book</a>
 </div>
 
 {% if books %}
@@ -40,7 +40,7 @@
             <td>{{ book.price | format_price }}</td>
             <td>{{ book.stock_quantity }}</td>
             <td>{{ book.isbn }}</td>
-            <td><a href="/books/{{ book.book_id }}">View</a></td>
+            <td><a href="{{ request.url_for('book_detail', book_id=book.book_id) }}">View</a></td>
         </tr>
         {% endfor %}
     </tbody>

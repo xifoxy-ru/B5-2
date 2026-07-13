@@ -35,15 +35,15 @@
 </dl>
 
 <div class="actions">
-    <a class="button secondary" href="/books">Back to List</a>
-    <a class="button" href="/books/{{ book.book_id }}/edit">Edit</a>
-    <form action="/books/{{ book.book_id }}/delete" method="post">
+    <a class="button secondary" href="{{ request.url_for('book_list') }}">Back to List</a>
+    <a class="button" href="{{ request.url_for('book_edit', book_id=book.book_id) }}">Edit</a>
+    <form action="{{ request.url_for('book_delete', book_id=book.book_id) }}" method="post">
         <button class="danger" type="submit">Delete</button>
     </form>
 </div>
 {% else %}
 <h1>Book Not Found</h1>
 <p class="notice">The requested book could not be found.</p>
-<p><a href="/books">Back to List</a></p>
+<p><a href="{{ request.url_for('book_list') }}">Back to List</a></p>
 {% endif %}
 {% endblock %}

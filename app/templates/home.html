@@ -8,7 +8,7 @@
 <p>This Library Book Manager lets you create, view, update, search, and delete book records.</p>
 
 <div class="actions">
-    <a class="button" href="/books">View Book List</a>
-    <a class="button secondary" href="/books/new">Create New Book</a>
+    <a class="button" href="{{ request.url_for('book_list') }}">View Book List</a>
+    <a class="button secondary" href="{{ request.url_for('book_new') }}">Create New Book</a>
 </div>
 {% endblock %}

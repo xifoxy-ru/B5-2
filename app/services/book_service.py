@@ -7,12 +7,15 @@ from app.models.author import Author
 from app.models.book import Book
 from app.models.category import Category
 from app.repositories import author_repository, book_repository, category_repository
+from app.schemas.book import BookFormData
 from app.services.book_validation_policy import (
     ISBN_ALLOWED_PATTERN,
     MAX_FUTURE_PUBLICATION_YEAR,
+    MAX_ISBN_LENGTH,
     MAX_PRICE,
     MAX_PRICE_DECIMAL_PLACES,
     MAX_STOCK_QUANTITY,
+    MAX_TITLE_LENGTH,
     MIN_PRICE,
     MIN_PUBLISHED_YEAR,
     MIN_STOCK_QUANTITY,
@@ -42,17 +45,17 @@ def get_book_form_options(db: Session) -> dict[str, list[Author] | list[Category
     }
 
 
-def create_book(db: Session, data: dict[str, Any]) -> Book:
-    book_data = _validate_book_data(db, data)
+def create_book(db: Session, form_data: BookFormData) -> Book:
+    book_data = _validate_book_data(db, form_data)
     return book_repository.create_book(db, **book_data)
 
 
-def update_book(db: Session, book_id: int, data: dict[str, Any]) -> Book | None:
+def update_book(db: Session, book_id: int, form_data: BookFormData) -> Book | None:
     book = book_repository.get_book(db, book_id)
     if book is None:
         return None
 
-    book_data = _validate_book_data(db, data, current_book_id=book_id)
+    book_data = _validate_book_data(db, form_data, current_book_id=book_id)
     return book_repository.update_book(db, book, **book_data)
 
 
@@ -67,18 +70,18 @@ def delete_book(db: Session, book_id: int) -> bool:
 
 def _validate_book_data(
     db: Session,
-    data: dict[str, Any],
+    form_data: BookFormData,
     current_book_id: int | None = None,
 ) -> dict[str, Any]:
     errors: dict[str, str] = {}
 
-    title = _clean_title(data, errors)
-    isbn = _clean_isbn(data, errors)
-    author_id = _parse_required_int(data, "author_id", errors)
-    category_id = _parse_required_int(data, "category_id", errors)
-    published_year = _parse_required_int(data, "published_year", errors)
-    price = _parse_required_price(data, errors)
-    stock_quantity = _parse_required_int(data, "stock_quantity", errors)
+    title = _clean_title(form_data.title, errors)
+    isbn = _clean_isbn(form_data.isbn, errors)
+    author_id = _parse_required_int(form_data.author_id, "author_id", errors)
+    category_id = _parse_required_int(form_data.category_id, "category_id", errors)
+    published_year = _parse_required_int(form_data.published_year, "published_year", errors)
+    price = _parse_required_price(form_data.price, errors)
+    stock_quantity = _parse_required_int(form_data.stock_quantity, "stock_quantity", errors)
 
     if published_year is not None and not (MIN_PUBLISHED_YEAR <= published_year <= MAX_FUTURE_PUBLICATION_YEAR):
         errors["published_year"] = (
@@ -114,10 +117,9 @@ def _validate_book_data(
 
 
 def _clean_title(
-    data: dict[str, Any],
+    value: str,
     errors: dict[str, str],
 ) -> str | None:
-    value = data.get("title")
     if value is None:
         errors["title"] = "This field is required."
         return None
@@ -127,11 +129,14 @@ def _clean_title(
         errors["title"] = "This field is required."
         return None
 
+    if len(text) > MAX_TITLE_LENGTH:
+        errors["title"] = f"Title must be at most {MAX_TITLE_LENGTH} characters."
+        return None
+
     return text
 
 
-def _clean_isbn(data: dict[str, Any], errors: dict[str, str]) -> str | None:
-    value = data.get("isbn")
+def _clean_isbn(value: str, errors: dict[str, str]) -> str | None:
     if value is None:
         errors["isbn"] = "This field is required."
         return None
@@ -139,6 +144,10 @@ def _clean_isbn(data: dict[str, Any], errors: dict[str, str]) -> str | None:
     isbn = str(value).strip()
     if not isbn:
         errors["isbn"] = "This field is required."
+        return None
+
+    if len(isbn) > MAX_ISBN_LENGTH:
+        errors["isbn"] = f"ISBN must be at most {MAX_ISBN_LENGTH} characters."
         return None
 
     if (
@@ -156,11 +165,10 @@ def _clean_isbn(data: dict[str, Any], errors: dict[str, str]) -> str | None:
 
 
 def _parse_required_int(
-    data: dict[str, Any],
+    value: str,
     field_name: str,
     errors: dict[str, str],
 ) -> int | None:
-    value = data.get(field_name)
     if value is None or str(value).strip() == "":
         errors[field_name] = "This field is required."
         return None
@@ -173,10 +181,9 @@ def _parse_required_int(
 
 
 def _parse_required_price(
-    data: dict[str, Any],
+    value: str,
     errors: dict[str, str],
 ) -> Decimal | None:
-    value = data.get("price")
     if value is None or str(value).strip() == "":
         errors["price"] = "This field is required."
         return None

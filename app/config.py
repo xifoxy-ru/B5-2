@@ -2,8 +2,6 @@ APP_TITLE = "B5-2 Book CRUD"
 
 TEMPLATES_DIRECTORY = "app/templates"
 
-BOOK_LIST_URL = "/books"
-
 ERROR_TEMPLATE_NAME = "error.html"
 
 NOT_FOUND_MESSAGE = "Page not found."
