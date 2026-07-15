@@ -9,9 +9,8 @@ from app.models.category import Category
 from app.repositories import author_repository, book_repository, category_repository
 from app.schemas.book import BookFormData
 from app.services.book_validation_policy import (
-    ISBN_ALLOWED_PATTERN,
+    ISBNValidationError,
     MAX_FUTURE_PUBLICATION_YEAR,
-    MAX_ISBN_LENGTH,
     MAX_PRICE,
     MAX_PRICE_DECIMAL_PLACES,
     MAX_STOCK_QUANTITY,
@@ -19,7 +18,7 @@ from app.services.book_validation_policy import (
     MIN_PRICE,
     MIN_PUBLISHED_YEAR,
     MIN_STOCK_QUANTITY,
-    VALID_ISBN_DIGIT_LENGTHS,
+    canonicalize_isbn,
 )
 
 
@@ -141,27 +140,15 @@ def _clean_isbn(value: str, errors: dict[str, str]) -> str | None:
         errors["isbn"] = "This field is required."
         return None
 
-    isbn = str(value).strip()
-    if not isbn:
+    if not str(value).strip():
         errors["isbn"] = "This field is required."
         return None
 
-    if len(isbn) > MAX_ISBN_LENGTH:
-        errors["isbn"] = f"ISBN must be at most {MAX_ISBN_LENGTH} characters."
+    try:
+        return canonicalize_isbn(value)
+    except ISBNValidationError as exc:
+        errors["isbn"] = str(exc)
         return None
-
-    if (
-        any(character.isspace() for character in isbn)
-        or not ISBN_ALLOWED_PATTERN.fullmatch(isbn)
-        or isbn.startswith("-")
-        or isbn.endswith("-")
-        or "--" in isbn
-        or len(isbn.replace("-", "")) not in VALID_ISBN_DIGIT_LENGTHS
-    ):
-        errors["isbn"] = "ISBN must contain 10 or 13 digits and may use single hyphens between digit groups."
-        return None
-
-    return isbn
 
 
 def _parse_required_int(

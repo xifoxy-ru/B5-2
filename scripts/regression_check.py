@@ -214,6 +214,102 @@ def import_application(temporary_root: Path) -> SimpleNamespace:
     )
 
 
+def reference_isbn_10_checksum_is_valid(isbn: str) -> bool:
+    digits = [int(character) for character in isbn[:9]]
+    check_digit = 10 if isbn[9] == "X" else int(isbn[9])
+    return (
+        sum(
+            weight * digit
+            for weight, digit in zip(range(10, 1, -1), digits)
+        )
+        + check_digit
+    ) % 11 == 0
+
+
+def reference_isbn_13_check_digit(first_twelve_digits: str) -> str:
+    weighted_sum = sum(
+        int(character) * (1 if index % 2 == 0 else 3)
+        for index, character in enumerate(first_twelve_digits)
+    )
+    return str((10 - weighted_sum % 10) % 10)
+
+
+def reference_isbn_13_checksum_is_valid(isbn: str) -> bool:
+    return isbn[-1] == reference_isbn_13_check_digit(isbn[:12])
+
+
+def check_isbn_policy(product: SimpleNamespace) -> None:
+    valid_cases = [
+        ("numeric ISBN-10", "0306406152", "9780306406157"),
+        ("hyphenated ISBN-10", "0-306-40615-2", "9780306406157"),
+        ("X ISBN-10", "080442957X", "9780804429573"),
+        ("lowercase x ISBN-10", "0-8044-2957-x", "9780804429573"),
+        ("978 ISBN-13", "9780306406157", "9780306406157"),
+        ("hyphenated ISBN-13", "978-0-306-40615-7", "9780306406157"),
+        ("surrounding whitespace", "  9780306406157  ", "9780306406157"),
+        ("979 ISBN-13", "9791234567896", "9791234567896"),
+        ("978978 prefix sequence", "9789781234569", "9789781234569"),
+        ("978979 prefix sequence", "9789791234566", "9789791234566"),
+        ("979978 prefix sequence", "9799781234568", "9799781234568"),
+        ("979979 prefix sequence", "9799791234565", "9799791234565"),
+    ]
+    for label, raw_isbn, expected_isbn in valid_cases:
+        compact_isbn = raw_isbn.strip().replace("-", "").replace("x", "X")
+        if len(compact_isbn) == 10:
+            require(
+                reference_isbn_10_checksum_is_valid(compact_isbn),
+                f"{label}: test ISBN-10 checksum is not valid",
+            )
+            first_twelve_digits = f"978{compact_isbn[:9]}"
+            reference_canonical = (
+                first_twelve_digits
+                + reference_isbn_13_check_digit(first_twelve_digits)
+            )
+            require(
+                expected_isbn == reference_canonical,
+                f"{label}: expected conversion was not independently calculated",
+            )
+        else:
+            require(
+                compact_isbn.isdigit()
+                and compact_isbn.startswith(("978", "979"))
+                and reference_isbn_13_checksum_is_valid(compact_isbn),
+                f"{label}: test ISBN-13 is not valid",
+            )
+
+        canonical_isbn = product.policy.canonicalize_isbn(raw_isbn)
+        require(canonical_isbn == expected_isbn, f"{label}: canonical ISBN differs")
+        require(
+            re.fullmatch(r"\d{13}", canonical_isbn) is not None,
+            f"{label}: canonical ISBN is not 13 digits",
+        )
+
+    require(
+        reference_isbn_13_checksum_is_valid("9770306406158"),
+        "invalid-prefix test ISBN does not have a valid checksum",
+    )
+    invalid_cases = [
+        ("ISBN invalid character", "030640615A", "characters that are not allowed"),
+        ("ISBN-10 X in first nine", "03064X6152", "ISBN-10 must use digits"),
+        ("ISBN-10 invalid checksum", "0306406153", "ISBN-10 check digit is invalid"),
+        ("ISBN-13 non-digit", "97803064061X7", "ISBN-13 must contain digits only"),
+        ("ISBN-13 invalid prefix", "9770306406158", "ISBN-13 must start with 978 or 979"),
+        ("ISBN-13 invalid checksum", "9780306406158", "ISBN-13 check digit is invalid"),
+        ("ISBN invalid length", "03064061520", "10 or 13 characters"),
+        ("ISBN start hyphen", "-0306406152", "must not start with a hyphen"),
+        ("ISBN end hyphen", "0306406152-", "must not end with a hyphen"),
+        ("ISBN consecutive hyphens", "0--306406152", "consecutive hyphens"),
+        ("ISBN internal whitespace", "03064 06152", "must not contain whitespace"),
+    ]
+    for label, raw_isbn, expected_message in invalid_cases:
+        try:
+            product.policy.canonicalize_isbn(raw_isbn)
+        except product.policy.ISBNValidationError as exc:
+            require(expected_message in str(exc), f"{label}: unexpected error {exc!s}")
+        else:
+            raise CheckFailure(f"{label}: invalid ISBN was accepted")
+
+
 def check_route_and_phase_contracts(product: SimpleNamespace, original_engine: Any) -> None:
     expected_routes = [
         ("home", "/", frozenset({"GET"})),
@@ -444,6 +540,22 @@ def require_form_context_preserved(
     require(context["form_data"] == form, "Form context did not preserve the original strings")
 
 
+def require_stored_isbn(
+    product: SimpleNamespace,
+    book_id: int,
+    expected_isbn: str,
+    label: str,
+) -> None:
+    with product.database.SessionLocal() as db:
+        book = db.get(product.Book, book_id)
+        require(book is not None, f"{label}: stored Book is missing")
+        require(book.isbn == expected_isbn, f"{label}: stored ISBN differs: {book.isbn!r}")
+        require(
+            re.fullmatch(r"\d{13}", book.isbn) is not None,
+            f"{label}: stored ISBN is not 13 digits",
+        )
+
+
 async def run_http_checks(product: SimpleNamespace) -> None:
     client = DirectASGIClient(product.app)
     state: dict[str, Any] = {}
@@ -472,6 +584,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require_original_input(new_form, "stock_quantity", "1", "create stock default")
         require('maxlength="200"' in new_form.body, "title maxlength is not rendered as 200")
         require('maxlength="20"' in new_form.body, "ISBN maxlength is not rendered as 20")
+        require('pattern="[0-9Xx-]+"' in new_form.body, "ISBN input pattern does not allow X and x")
 
     await run_async_check("basic pages and template URLs", basic_pages)
 
@@ -482,12 +595,12 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         "published_year": "2025",
         "price": "12.50",
         "stock_quantity": "3",
-        "isbn": "9780000000001",
+        "isbn": "0306406152",
     }
     second_form = {
         **first_form,
         "title": "Search Other",
-        "isbn": "9780000000002",
+        "isbn": "979-1-234-56789-6",
     }
 
     async def create_and_search_flow() -> None:
@@ -502,6 +615,8 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require_html(first_detail, 200, "created Book detail")
         require("Regression Alpha" in first_detail.body, "normalized title was not stored")
         require("Regression   Alpha" not in first_detail.body, "title whitespace was not normalized")
+        require("9780306406157" in first_detail.body, "ISBN-10 was not rendered as canonical ISBN-13")
+        require_stored_isbn(product, state["first_id"], "9780306406157", "numeric ISBN-10 Create")
         require_paths(
             first_detail,
             links={"/books", f"{first_path}/edit"},
@@ -514,6 +629,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         second_path = urlsplit(second_create.headers.get("location", "")).path
         state["second_path"] = second_path
         state["second_id"] = int(second_path.rsplit("/", 1)[1])
+        require_stored_isbn(product, state["second_id"], "9791234567896", "hyphenated 979 ISBN-13 Create")
 
         search = await client.request("GET", "/books", query=urlencode({"q": "Alpha"}))
         require_html(search, 200, "GET /books?q=Alpha")
@@ -536,7 +652,11 @@ async def run_http_checks(product: SimpleNamespace) -> None:
             label="update form",
         )
 
-        same_isbn_form = {**first_form, "title": "Regression Updated"}
+        same_isbn_form = {
+            **first_form,
+            "title": "Regression Updated",
+            "isbn": "0-306-40615-2",
+        }
         update = await client.request("POST", f"{first_path}/edit", form=same_isbn_form)
         require(update.status_code == 303, f"Update expected 303, got {update.status_code}")
         require(urlsplit(update.headers.get("location", "")).path == first_path, "Update redirect differs")
@@ -544,6 +664,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         updated_detail = await client.request("GET", first_path)
         require_html(updated_detail, 200, "updated Book detail")
         require("Regression Updated" in updated_detail.body, "updated title is missing")
+        require_stored_isbn(product, first_id, "9780306406157", "self ISBN expression Update")
 
         duplicate_form = {**same_isbn_form, "isbn": second_form["isbn"]}
         duplicate = await client.request("POST", f"{first_path}/edit", form=duplicate_form)
@@ -578,6 +699,80 @@ async def run_http_checks(product: SimpleNamespace) -> None:
 
     await run_async_check("update flow", update_flow)
 
+    async def isbn_canonicalization_and_duplicates() -> None:
+        first_path = state["first_path"]
+
+        equivalent_first_isbns = (
+            "03-064-0615-2",
+            "9780306406157",
+            "978-03-0640615-7",
+        )
+        for isbn in equivalent_first_isbns:
+            duplicate = await client.request(
+                "POST",
+                "/books",
+                form={**first_form, "title": f"Duplicate {isbn}", "isbn": isbn},
+            )
+            require_field_error(
+                duplicate,
+                "isbn",
+                "ISBN already exists.",
+                f"equivalent ISBN duplicate {isbn}",
+            )
+
+        lowercase_x_form = {
+            **first_form,
+            "title": "Lowercase X ISBN",
+            "isbn": "0-8044-2957-x",
+        }
+        lowercase_x_create = await client.request("POST", "/books", form=lowercase_x_form)
+        require(lowercase_x_create.status_code == 303, "lowercase x ISBN-10 Create did not return 303")
+        lowercase_x_path = urlsplit(lowercase_x_create.headers.get("location", "")).path
+        lowercase_x_id = int(lowercase_x_path.rsplit("/", 1)[1])
+        require_stored_isbn(product, lowercase_x_id, "9780804429573", "lowercase x ISBN-10 Create")
+
+        for isbn in ("080442957X", "080442957x", "978-0-8044-2957-3"):
+            duplicate = await client.request(
+                "POST",
+                "/books",
+                form={**lowercase_x_form, "title": f"Duplicate {isbn}", "isbn": isbn},
+            )
+            require_field_error(
+                duplicate,
+                "isbn",
+                "ISBN already exists.",
+                f"X/canonical ISBN duplicate {isbn}",
+            )
+
+        self_expression_update = await client.request(
+            "POST",
+            f"{lowercase_x_path}/edit",
+            form={**lowercase_x_form, "title": "Uppercase X Update", "isbn": "080442957X"},
+        )
+        require(self_expression_update.status_code == 303, "self ISBN expression Update did not return 303")
+        require(
+            urlsplit(self_expression_update.headers.get("location", "")).path == lowercase_x_path,
+            "self ISBN expression Update redirect differs",
+        )
+        require_stored_isbn(product, lowercase_x_id, "9780804429573", "uppercase X self Update")
+
+        other_book_duplicate = await client.request(
+            "POST",
+            f"{first_path}/edit",
+            form={**first_form, "title": "Other ISBN Duplicate", "isbn": "9780804429573"},
+        )
+        require_field_error(
+            other_book_duplicate,
+            "isbn",
+            "ISBN already exists.",
+            "other Book canonical ISBN Update",
+        )
+
+    await run_async_check(
+        "ISBN canonicalization and duplicate handling",
+        isbn_canonicalization_and_duplicates,
+    )
+
     async def validation() -> None:
         valid_form = {
             "title": "Validation Base",
@@ -586,7 +781,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
             "published_year": "2025",
             "price": "10.00",
             "stock_quantity": "1",
-            "isbn": "9780000000999",
+            "isbn": "9781234567897",
         }
         long_isbn = "1-2-3-4-5-6-7-8-90123"
         require(len(long_isbn) == 21, "long ISBN test input is not 21 characters")
@@ -632,12 +827,53 @@ async def run_http_checks(product: SimpleNamespace) -> None:
                 "stock_quantity",
                 "Stock quantity must be between",
             ),
-            ("invalid ISBN character", {"isbn": "978000000000X"}, "isbn", "ISBN must contain 10 or 13 digits"),
-            ("ISBN internal space", {"isbn": "978000 000001"}, "isbn", "ISBN must contain 10 or 13 digits"),
-            ("ISBN start hyphen", {"isbn": "-1234567890"}, "isbn", "ISBN must contain 10 or 13 digits"),
-            ("ISBN end hyphen", {"isbn": "1234567890-"}, "isbn", "ISBN must contain 10 or 13 digits"),
-            ("ISBN double hyphen", {"isbn": "12345--67890"}, "isbn", "ISBN must contain 10 or 13 digits"),
-            ("ISBN digit count", {"isbn": "12345678901"}, "isbn", "ISBN must contain 10 or 13 digits"),
+            ("blank ISBN", {"isbn": ""}, "isbn", "This field is required."),
+            (
+                "ISBN-10 character in first nine",
+                {"isbn": "03064X6152"},
+                "isbn",
+                "ISBN-10 must use digits in the first 9 positions",
+            ),
+            (
+                "ISBN-10 invalid final character",
+                {"isbn": "030640615A"},
+                "isbn",
+                "ISBN contains characters that are not allowed.",
+            ),
+            (
+                "ISBN-10 invalid check digit",
+                {"isbn": "0306406153"},
+                "isbn",
+                "ISBN-10 check digit is invalid.",
+            ),
+            (
+                "ISBN-13 character",
+                {"isbn": "97803064061X7"},
+                "isbn",
+                "ISBN-13 must contain digits only.",
+            ),
+            (
+                "ISBN-13 invalid prefix",
+                {"isbn": "9770306406158"},
+                "isbn",
+                "ISBN-13 must start with 978 or 979.",
+            ),
+            (
+                "ISBN-13 invalid check digit",
+                {"isbn": "9780306406158"},
+                "isbn",
+                "ISBN-13 check digit is invalid.",
+            ),
+            ("ISBN internal space", {"isbn": "978030 6406157"}, "isbn", "ISBN must not contain whitespace."),
+            ("ISBN start hyphen", {"isbn": "-0306406152"}, "isbn", "ISBN must not start with a hyphen."),
+            ("ISBN end hyphen", {"isbn": "0306406152-"}, "isbn", "ISBN must not end with a hyphen."),
+            (
+                "ISBN double hyphen",
+                {"isbn": "0--306406152"},
+                "isbn",
+                "ISBN must not contain consecutive hyphens.",
+            ),
+            ("ISBN character count", {"isbn": "03064061520"}, "isbn", "10 or 13 characters"),
             ("ISBN over 20 characters", {"isbn": long_isbn}, "isbn", "ISBN must be at most 20 characters."),
             ("duplicate ISBN", {"isbn": second_form["isbn"]}, "isbn", "ISBN already exists."),
         ]
@@ -742,7 +978,7 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
             published_year=2025,
             price=10.0,
             stock_quantity=1,
-            isbn="1234567890",
+            isbn="9780000000019",
         )
         db.add(valid_book)
         db.commit()
@@ -756,7 +992,7 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
                 published_year=2025,
                 price=10.0,
                 stock_quantity=1,
-                isbn="1234567891",
+                isbn="9780000000026",
             )
         )
         try:
@@ -774,7 +1010,7 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
                 published_year=2025,
                 price=10.0,
                 stock_quantity=1,
-                isbn="1234567892",
+                isbn="9780000000033",
             )
         )
         try:
@@ -791,7 +1027,7 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
             published_year=2025,
             price=10.0,
             stock_quantity=1,
-            isbn="1234567893",
+            isbn="9780000000040",
         )
         db.add(valid_after_rollback)
         db.commit()
@@ -822,7 +1058,7 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
             published_year="2025",
             price="10.00",
             stock_quantity="1",
-            isbn="9780000000777",
+            isbn="9780000000057",
         )
         try:
             product.book_service.create_book(db, invalid_references)
@@ -878,6 +1114,7 @@ def main() -> int:
                     "route and Phase 1-5 contracts",
                     lambda: check_route_and_phase_contracts(product, original_engine),
                 )
+                run_check("ISBN policy and conversion", lambda: check_isbn_policy(product))
                 run_check("url_for source structure", check_url_for_source)
                 asyncio.run(run_http_checks(product))
                 run_check(

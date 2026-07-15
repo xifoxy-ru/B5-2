@@ -68,7 +68,7 @@
 
     <div class="field">
         <label for="isbn">ISBN</label>
-        <input id="isbn" name="isbn" type="text" maxlength="{{ validation_limits.max_isbn_length }}" pattern="[0-9-]+" title="Use 10 or 13 digits, with optional single hyphens between digit groups." value="{{ form_data.isbn | default('') }}">
+        <input id="isbn" name="isbn" type="text" maxlength="{{ validation_limits.max_isbn_length }}" pattern="[0-9Xx-]+" title="Use ISBN-10 or ISBN-13 digits, with optional single hyphens and X only as the ISBN-10 check digit." value="{{ form_data.isbn | default('') }}">
         {% if errors.isbn %}<div class="error">{{ errors.isbn }}</div>{% endif %}
     </div>
 
