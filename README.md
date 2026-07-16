@@ -38,8 +38,12 @@ app/
 ├── schemas/                # Book Form 입력 데이터 구조
 ├── services/               # 업무 흐름, Validation과 정규화
 └── templates/              # 서버에서 렌더링하는 HTML Template
+sql/
+└── seed.sql                # 화면 확인용 Book 예제 데이터
 scripts/
+├── db_cli.py               # 기본 DB seed와 reset 명령
 └── regression_check.py     # 직접 실행하는 회귀 검증 스크립트
+Makefile                    # 실행, 검증, 정리와 DB 작업 명령
 requirements.txt            # Python Dependency 목록
 library.db                  # SQLite 데이터베이스 파일
 ```
@@ -88,6 +92,21 @@ uvicorn app.main:app --reload
 .venv/bin/uvicorn app.main:app --reload
 ```
 
+## Make 명령
+
+프로젝트 작업에 사용하는 공개 명령은 다음 여섯 가지입니다.
+
+| 명령 | 역할 |
+|---|---|
+| `make help` | 사용할 수 있는 명령과 설명 출력 |
+| `make run` | FastAPI 개발 서버 실행 |
+| `make test` | 전체 회귀 검증 실행 |
+| `make clean` | Python 캐시와 운영체제 메타데이터 정리 |
+| `make db-seed` | 비어 있는 DB에 `sql/seed.sql` 데이터 삽입 |
+| `make db-reset` | 기본 DB를 재생성하고 seed 데이터 삽입 |
+
+`make db-seed`는 `books` 테이블이 비어 있을 때만 성공합니다. 기존 Book 데이터가 있으면 일부 데이터만 삽입하지 않고 실패하므로, 깨끗한 예제 DB가 필요할 때는 `make db-reset`을 사용합니다. `db-reset`은 기존 `library.db` 데이터를 삭제하므로 보존할 데이터가 있다면 실행하지 않아야 합니다.
+
 ## 접속 주소
 
 - 홈: <http://127.0.0.1:8000/>
@@ -134,7 +153,8 @@ uvicorn app.main:app --reload
 - 가격은 DB에서 `123456` cents, Form에서 `1234.56`, 목록과 상세 화면에서 `$1,234.56`처럼 구분해 사용합니다.
 - 화면 가격은 `$`, 천 단위 쉼표와 소수점 이하 두 자리로 표시하며 Form에는 `$`와 쉼표 없는 십진 문자열을 사용합니다.
 - SQLite 연결이 생성될 때마다 기존 인프라 설정인 `PRAGMA foreign_keys=ON`을 적용합니다.
-- 애플리케이션 시작 시 필요한 `books` 테이블을 생성합니다.
+- 애플리케이션 시작 시 필요한 `books` 테이블만 생성하며 예제 데이터는 자동 삽입하지 않습니다.
+- `sql/seed.sql`은 canonical ISBN과 cents 정수 가격을 사용하는 Book 예제 데이터를 한 Transaction으로 삽입합니다.
 
 ## 오류 처리
 
@@ -157,6 +177,7 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python scripts/regression_check.py
 - Redirect와 HTML 오류 화면
 - 입력값 Validation과 원래 입력값 보존
 - Book 단일 모델 구조와 ISBN Unique 제약
+- seed/reset CLI, SQL 데이터와 Make 명령
 - 실제 `library.db`의 존재 여부, 크기와 수정 시간 유지
 
 검증 데이터는 격리된 임시 SQLite DB에 저장되며 실행이 끝나면 정리됩니다.
