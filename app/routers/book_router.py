@@ -229,7 +229,7 @@ def _book_to_form_data(book: Book) -> dict[str, Any]:
         "author": book.author,
         "category": book.category,
         "published_year": book.published_year,
-        "price": book.price,
+        "price": book_service.price_cents_to_form_value(book.price_cents),
         "stock_quantity": book.stock_quantity,
         "isbn": book.isbn,
     }

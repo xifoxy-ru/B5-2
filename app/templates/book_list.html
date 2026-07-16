@@ -37,7 +37,7 @@
             <td>{{ book.author }}</td>
             <td>{{ book.category }}</td>
             <td>{{ book.published_year }}</td>
-            <td>{{ book.price | format_price }}</td>
+            <td>{{ book.price_cents | format_price }}</td>
             <td>{{ book.stock_quantity }}</td>
             <td>{{ book.isbn }}</td>
             <td><a href="{{ request.url_for('book_detail', book_id=book.book_id) }}">View</a></td>

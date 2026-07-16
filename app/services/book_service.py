@@ -12,12 +12,19 @@ from app.services.book_validation_policy import (
     MAX_CATEGORY_LENGTH,
     MAX_FUTURE_PUBLICATION_YEAR,
     MAX_PRICE,
+    MAX_PRICE_CENTS,
     MAX_PRICE_DECIMAL_PLACES,
+    MAX_PRICE_INTEGER_DIGITS,
     MAX_STOCK_QUANTITY,
     MAX_TITLE_LENGTH,
     MIN_PRICE,
     MIN_PUBLISHED_YEAR,
     MIN_STOCK_QUANTITY,
+    NON_FINITE_PRICE_INPUTS,
+    PRICE_CENTS_PER_UNIT,
+    PRICE_DECIMAL_CANDIDATE_PATTERN,
+    PRICE_INPUT_PATTERN,
+    SQLITE_SIGNED_64_MAX,
     canonicalize_isbn,
 )
 
@@ -84,7 +91,7 @@ def _validate_book_data(
         errors=errors,
     )
     published_year = _parse_required_int(form_data.published_year, "published_year", errors)
-    price = _parse_required_price(form_data.price, errors)
+    price_cents = _parse_required_price_cents(form_data.price, errors)
     stock_quantity = _parse_required_int(form_data.stock_quantity, "stock_quantity", errors)
 
     if published_year is not None and not (MIN_PUBLISHED_YEAR <= published_year <= MAX_FUTURE_PUBLICATION_YEAR):
@@ -108,7 +115,7 @@ def _validate_book_data(
         "author": author,
         "category": category,
         "published_year": published_year,
-        "price": float(price),
+        "price_cents": price_cents,
         "stock_quantity": stock_quantity,
         "isbn": isbn,
     }
@@ -189,30 +196,65 @@ def _parse_required_int(
         return None
 
 
-def _parse_required_price(
+def _parse_required_price_cents(
     value: str,
     errors: dict[str, str],
-) -> Decimal | None:
+) -> int | None:
     if value is None or str(value).strip() == "":
         errors["price"] = "This field is required."
         return None
 
+    text = str(value).strip()
+    has_allowed_format = PRICE_INPUT_PATTERN.fullmatch(text) is not None
+    has_policy_candidate_format = (
+        PRICE_DECIMAL_CANDIDATE_PATTERN.fullmatch(text) is not None
+        or text in NON_FINITE_PRICE_INPUTS
+    )
+    if not has_allowed_format and not has_policy_candidate_format:
+        errors["price"] = "Price must be a decimal amount with up to 2 decimal places."
+        return None
+
     try:
-        price = Decimal(str(value).strip())
+        price = Decimal(text)
     except InvalidOperation:
-        errors["price"] = "This field must be numeric."
+        errors["price"] = "Price must be a decimal amount with up to 2 decimal places."
         return None
 
     if not price.is_finite():
-        errors["price"] = "This field must be numeric."
+        errors["price"] = "Price must be a finite number."
         return None
 
-    if price < MIN_PRICE or price > MAX_PRICE:
-        errors["price"] = f"Price must be between {MIN_PRICE} and {MAX_PRICE}."
+    if text.startswith("-") or price < MIN_PRICE:
+        errors["price"] = "Price must be 0 or greater."
         return None
 
-    if price.as_tuple().exponent < -MAX_PRICE_DECIMAL_PLACES:
+    fractional_part = text.partition(".")[2]
+    if len(fractional_part) > MAX_PRICE_DECIMAL_PLACES:
         errors["price"] = f"Price may have at most {MAX_PRICE_DECIMAL_PLACES} decimal places."
         return None
 
-    return price
+    integer_part = text.partition(".")[0]
+    significant_integer_part = integer_part.lstrip("0") or "0"
+    if len(significant_integer_part) > MAX_PRICE_INTEGER_DIGITS or price > MAX_PRICE:
+        errors["price"] = f"Price must be at most {MAX_PRICE}."
+        return None
+
+    price_cents_decimal = price * PRICE_CENTS_PER_UNIT
+    if price_cents_decimal != price_cents_decimal.to_integral_value():
+        errors["price"] = f"Price may have at most {MAX_PRICE_DECIMAL_PLACES} decimal places."
+        return None
+
+    price_cents = int(price_cents_decimal)
+    if price_cents > MAX_PRICE_CENTS or price_cents > SQLITE_SIGNED_64_MAX:
+        errors["price"] = f"Price must be at most {MAX_PRICE}."
+        return None
+
+    return price_cents
+
+
+def price_cents_to_decimal(price_cents: int) -> Decimal:
+    return Decimal(price_cents) / PRICE_CENTS_PER_UNIT
+
+
+def price_cents_to_form_value(price_cents: int) -> str:
+    return format(price_cents_to_decimal(price_cents), ".2f")

@@ -114,7 +114,8 @@ uvicorn app.main:app --reload
 - 제목은 필수입니다. 앞뒤 공백을 제거하고 연속 공백을 하나로 정리하며, 최대 200자까지 허용합니다.
 - Author와 Category는 Book에 직접 저장하는 필수 문자열입니다. 앞뒤 공백을 제거하며 각각 최대 100자까지 허용합니다.
 - 출판 연도는 1000 이상, 실행 시점의 현재 연도보다 1년 뒤까지 허용합니다.
-- 가격은 0 이상 10,000,000 이하이며 소수점 둘째 자리까지 허용합니다. `NaN`, `Infinity`, `-Infinity`는 허용하지 않습니다.
+- 가격 입력은 일반적인 십진 금액 문자열을 `Decimal`로 검증합니다. 0 이상, 정수부 최대 15자리, 소수점 이하 최대 2자리이며 최대값은 `999999999999999.99`입니다.
+- 지수 표기, `NaN`, `Infinity`, `-Infinity`는 허용하지 않으며 Form에는 쉼표 없는 십진 금액 문자열을 사용합니다.
 - 재고는 0 이상 100,000 이하의 정수여야 합니다.
 - ISBN-10과 ISBN-13 입력을 지원하며 숫자 그룹 사이의 단일 하이픈을 허용합니다. 내부 공백, 시작·끝 하이픈과 연속 하이픈은 허용하지 않습니다.
 - ISBN-10과 ISBN-13의 체크디지트를 검증하고, ISBN-13은 `978` 또는 `979` prefix인지 확인합니다.
@@ -129,6 +130,7 @@ uvicorn app.main:app --reload
 - 사용자 테이블은 SQLAlchemy ORM의 `books` 하나입니다.
 - Author와 Category는 별도 Model이나 테이블이 아니라 Book의 문자열 Column입니다.
 - Book은 다른 사용자 정의 Model과 Foreign Key 또는 relationship을 사용하지 않습니다.
+- 가격은 SQLite 부동소수점 정밀도 문제를 피하기 위해 최소 화폐 단위인 cents 정수로 `price_cents` Column에 저장합니다.
 - SQLite 연결이 생성될 때마다 기존 인프라 설정인 `PRAGMA foreign_keys=ON`을 적용합니다.
 - 애플리케이션 시작 시 필요한 `books` 테이블을 생성합니다.
 

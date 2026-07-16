@@ -29,7 +29,7 @@ def create_book(
     author: str,
     category: str,
     published_year: int,
-    price: float,
+    price_cents: int,
     stock_quantity: int,
     isbn: str,
 ) -> Book:
@@ -38,7 +38,7 @@ def create_book(
         author=author,
         category=category,
         published_year=published_year,
-        price=price,
+        price_cents=price_cents,
         stock_quantity=stock_quantity,
         isbn=isbn,
     )
@@ -55,7 +55,7 @@ def update_book(
     author: str,
     category: str,
     published_year: int,
-    price: float,
+    price_cents: int,
     stock_quantity: int,
     isbn: str,
 ) -> Book:
@@ -63,7 +63,7 @@ def update_book(
     book.author = author
     book.category = category
     book.published_year = published_year
-    book.price = price
+    book.price_cents = price_cents
     book.stock_quantity = stock_quantity
     book.isbn = isbn
     db.commit()

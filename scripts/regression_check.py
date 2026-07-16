@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, fields
+from decimal import Decimal
 from html import escape
 from html.parser import HTMLParser
 import importlib
@@ -15,7 +16,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, Coroutine
 from urllib.parse import urlencode, urlsplit
 
-from sqlalchemy import Float, String, create_engine, event, text
+from sqlalchemy import BigInteger, String, create_engine, event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -306,6 +307,71 @@ def check_isbn_policy(product: SimpleNamespace) -> None:
             raise CheckFailure(f"{label}: invalid ISBN was accepted")
 
 
+def check_price_policy(product: SimpleNamespace) -> None:
+    valid_cases = {
+        "0": 0,
+        "00": 0,
+        "000": 0,
+        "0.00": 0,
+        "0.01": 1,
+        "1": 100,
+        "10": 1000,
+        "10.0": 1000,
+        "10.00": 1000,
+        "10.5": 1050,
+        "00010": 1000,
+        "00010.50": 1050,
+        "1234.56": 123456,
+        "999999999999999": 99_999_999_999_999_900,
+        "999999999999999.9": 99_999_999_999_999_990,
+        "999999999999999.99": 99_999_999_999_999_999,
+    }
+    for raw_price, expected_cents in valid_cases.items():
+        errors: dict[str, str] = {}
+        actual_cents = product.book_service._parse_required_price_cents(raw_price, errors)
+        require(not errors, f"{raw_price}: valid price produced errors {errors!r}")
+        require(actual_cents == expected_cents, f"{raw_price}: cents differ: {actual_cents!r}")
+        require(isinstance(actual_cents, int), f"{raw_price}: cents is not int")
+        restored = product.book_service.price_cents_to_decimal(actual_cents)
+        require(restored == Decimal(expected_cents) / Decimal("100"), f"{raw_price}: Decimal restore differs")
+        require(
+            product.book_service.price_cents_to_form_value(actual_cents)
+            == format(Decimal(expected_cents) / Decimal("100"), ".2f"),
+            f"{raw_price}: Form value restore differs",
+        )
+
+    invalid_cases = [
+        ("", "This field is required."),
+        ("   ", "This field is required."),
+        ("-0", "Price must be 0 or greater."),
+        ("-0.00", "Price must be 0 or greater."),
+        ("-1", "Price must be 0 or greater."),
+        ("-0.01", "Price must be 0 or greater."),
+        ("+10", "Price must be a decimal amount"),
+        ("abc", "Price must be a decimal amount"),
+        ("10a", "Price must be a decimal amount"),
+        ("$10", "Price must be a decimal amount"),
+        ("1,000", "Price must be a decimal amount"),
+        ("10.", "Price must be a decimal amount"),
+        (".50", "Price must be a decimal amount"),
+        ("10.000", "Price may have at most 2 decimal places."),
+        ("10.123", "Price may have at most 2 decimal places."),
+        ("1e3", "Price must be a decimal amount"),
+        ("1E3", "Price must be a decimal amount"),
+        ("NaN", "Price must be a finite number."),
+        ("Infinity", "Price must be a finite number."),
+        ("-Infinity", "Price must be a finite number."),
+        ("1000000000000000", "Price must be at most"),
+        ("1000000000000000.00", "Price must be at most"),
+        ("999999999999999.999", "Price may have at most 2 decimal places."),
+    ]
+    for raw_price, expected_message in invalid_cases:
+        errors = {}
+        actual_cents = product.book_service._parse_required_price_cents(raw_price, errors)
+        require(actual_cents is None, f"{raw_price!r}: invalid price produced cents")
+        require(expected_message in errors.get("price", ""), f"{raw_price!r}: unexpected price error {errors!r}")
+
+
 def check_route_and_phase_contracts(product: SimpleNamespace, original_engine: Any) -> None:
     expected_routes = [
         ("home", "/", frozenset({"GET"})),
@@ -396,7 +462,7 @@ def check_route_and_phase_contracts(product: SimpleNamespace, original_engine: A
             "author",
             "category",
             "published_year",
-            "price",
+            "price_cents",
             "stock_quantity",
             "isbn",
         ],
@@ -412,7 +478,16 @@ def check_route_and_phase_contracts(product: SimpleNamespace, original_engine: A
     require(product.Book.__table__.c.category.type.length == 100, "Book.category length differs")
     require(product.Book.__table__.c.title.type.length == 200, "Book.title model length differs")
     require(product.Book.__table__.c.isbn.type.length == 20, "Book.isbn model length differs")
-    require(isinstance(product.Book.__table__.c.price.type, Float), "Book.price is no longer Float")
+    require("price" not in product.Book.__table__.c, "legacy Book.price Column still exists")
+    require(isinstance(product.Book.__table__.c.price_cents.type, BigInteger), "Book.price_cents is not BigInteger")
+    require(product.policy.MAX_PRICE == Decimal("999999999999999.99"), "price maximum differs")
+    require(product.policy.MAX_PRICE_INTEGER_DIGITS == 15, "price integer digit maximum differs")
+    require(product.policy.MAX_PRICE_DECIMAL_PLACES == 2, "price decimal place maximum differs")
+    require(product.policy.MAX_PRICE_CENTS == 99_999_999_999_999_999, "maximum cents differs")
+    require(
+        product.policy.MAX_PRICE_CENTS <= product.policy.SQLITE_SIGNED_64_MAX,
+        "maximum cents exceeds SQLite signed 64-bit INTEGER",
+    )
     require(
         event.contains(
             original_engine,
@@ -482,6 +557,28 @@ def check_single_model_source() -> None:
     )
     for token in forbidden_tokens:
         require(token not in source, f"active Book flow still contains {token!r}")
+
+
+def check_price_cents_source() -> None:
+    price_paths = [
+        APPLICATION_DIRECTORY / "models" / "book.py",
+        APPLICATION_DIRECTORY / "repositories" / "book_repository.py",
+        APPLICATION_DIRECTORY / "routers" / "book_router.py",
+        APPLICATION_DIRECTORY / "services" / "book_service.py",
+        APPLICATION_DIRECTORY / "template_config.py",
+        APPLICATION_DIRECTORY / "templates" / "book_list.html",
+        APPLICATION_DIRECTORY / "templates" / "book_detail.html",
+    ]
+    source = "\n".join(path.read_text() for path in price_paths)
+    for pattern, label in (
+        (r"\bFloat\b", "Float"),
+        (r"\bfloat\(", "float conversion"),
+        (r"\bNumeric\(", "Numeric"),
+        (r"Decimal\(\s*float", "Decimal(float)"),
+        (r"book\.price(?!_cents)", "legacy book.price"),
+    ):
+        require(re.search(pattern, source) is None, f"active price flow still contains {label}")
+    require(source.count("price_cents") >= 8, "price_cents is not connected across active layers")
 
 
 def html_targets(body: str) -> HTMLTargets:
@@ -629,6 +726,24 @@ def require_stored_book_text(
         require(book.category == category, f"{label}: stored category differs: {book.category!r}")
 
 
+def require_stored_price_cents(
+    product: SimpleNamespace,
+    book_id: int,
+    expected_cents: int,
+    label: str,
+) -> None:
+    with product.database.SessionLocal() as db:
+        book = db.get(product.Book, book_id)
+        require(book is not None, f"{label}: stored Book is missing")
+        require(book.price_cents == expected_cents, f"{label}: stored cents differ: {book.price_cents!r}")
+        require(isinstance(book.price_cents, int), f"{label}: ORM cents is not int")
+
+
+def generated_isbn_13(sequence: int) -> str:
+    first_twelve_digits = f"978600{sequence:06d}"
+    return first_twelve_digits + reference_isbn_13_check_digit(first_twelve_digits)
+
+
 async def run_http_checks(product: SimpleNamespace) -> None:
     client = DirectASGIClient(product.app)
     state: dict[str, Any] = {}
@@ -662,6 +777,10 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require('maxlength="100"' in field_fragment(new_form.body, "category"), "category maxlength is not 100")
         require('name="author_id"' not in new_form.body, "legacy author_id field is rendered")
         require('name="category_id"' not in new_form.body, "legacy category_id field is rendered")
+        require(
+            'max="999999999999999.99"' in field_fragment(new_form.body, "price"),
+            "price maximum is not rendered",
+        )
         require('maxlength="20"' in new_form.body, "ISBN maxlength is not rendered as 20")
         require('pattern="[0-9Xx-]+"' in new_form.body, "ISBN input pattern does not allow X and x")
 
@@ -696,8 +815,10 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require("Regression   Alpha" not in first_detail.body, "title whitespace was not normalized")
         require("Jane Austen" in first_detail.body, "author text is missing from Book detail")
         require("Fiction" in first_detail.body, "category text is missing from Book detail")
+        require("12.50" in first_detail.body, "price cents were not rendered as the original amount")
         require("9780306406157" in first_detail.body, "ISBN-10 was not rendered as canonical ISBN-13")
         require_stored_isbn(product, state["first_id"], "9780306406157", "numeric ISBN-10 Create")
+        require_stored_price_cents(product, state["first_id"], 1250, "price Create")
         require_stored_book_text(
             product,
             state["first_id"],
@@ -735,6 +856,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
 
         edit_form = await client.request("GET", f"{first_path}/edit")
         require_html(edit_form, 200, "GET Book edit")
+        require_original_input(edit_form, "price", "12.50", "initial Update price")
         require_paths(
             edit_form,
             links={first_path},
@@ -747,6 +869,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
             "title": "Regression Updated",
             "author": "George Orwell",
             "category": "Dystopian Fiction",
+            "price": "1234.56",
             "isbn": "0-306-40615-2",
         }
         update = await client.request("POST", f"{first_path}/edit", form=same_isbn_form)
@@ -758,7 +881,9 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require("Regression Updated" in updated_detail.body, "updated title is missing")
         require("George Orwell" in updated_detail.body, "updated author is missing")
         require("Dystopian Fiction" in updated_detail.body, "updated category is missing")
+        require("1,234.56" in updated_detail.body, "updated price cents were not rendered as an amount")
         require_stored_isbn(product, first_id, "9780306406157", "self ISBN expression Update")
+        require_stored_price_cents(product, first_id, 123456, "price Update")
         require_stored_book_text(
             product,
             first_id,
@@ -801,6 +926,67 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         )
 
     await run_async_check("update flow", update_flow)
+
+    async def price_cents_create_update_flow() -> None:
+        price_cases = [
+            ("0", 0),
+            ("00", 0),
+            ("0.00", 0),
+            ("10", 1000),
+            ("10.0", 1000),
+            ("10.00", 1000),
+            ("10.5", 1050),
+            ("00010.50", 1050),
+            ("999999999999999", 99_999_999_999_999_900),
+            ("999999999999999.99", 99_999_999_999_999_999),
+        ]
+        for sequence, (raw_price, expected_cents) in enumerate(price_cases, start=1):
+            isbn = generated_isbn_13(sequence)
+            price_form = {
+                **first_form,
+                "title": f"Price Flow {sequence}",
+                "price": raw_price,
+                "isbn": isbn,
+            }
+            created = await client.request("POST", "/books", form=price_form)
+            require(created.status_code == 303, f"price Create {raw_price!r} did not return 303")
+            created_path = urlsplit(created.headers.get("location", "")).path
+            created_id = int(created_path.rsplit("/", 1)[1])
+            require_stored_price_cents(
+                product,
+                created_id,
+                expected_cents,
+                f"price Create {raw_price!r}",
+            )
+
+            edit_form = await client.request("GET", f"{created_path}/edit")
+            require_html(edit_form, 200, f"price Edit Form {raw_price!r}")
+            expected_form_value = format(Decimal(expected_cents) / Decimal("100"), ".2f")
+            require_original_input(
+                edit_form,
+                "price",
+                expected_form_value,
+                f"restored price Form {raw_price!r}",
+            )
+
+            updated = await client.request(
+                "POST",
+                f"{created_path}/edit",
+                form={**price_form, "title": f"Price Updated {sequence}"},
+            )
+            require(updated.status_code == 303, f"price Update {raw_price!r} did not return 303")
+            require(
+                urlsplit(updated.headers.get("location", "")).path == created_path,
+                f"price Update {raw_price!r} redirect differs",
+            )
+            require_stored_price_cents(
+                product,
+                created_id,
+                expected_cents,
+                f"price Update {raw_price!r}",
+            )
+
+    await run_async_check("price cents Create and Update flow", price_cents_create_update_flow)
 
     async def isbn_canonicalization_and_duplicates() -> None:
         first_path = state["first_path"]
@@ -924,18 +1110,44 @@ async def run_http_checks(product: SimpleNamespace) -> None:
                 "published_year",
                 "Published year must be between",
             ),
-            ("invalid price", {"price": "price"}, "price", "This field must be numeric."),
-            ("negative price", {"price": "-0.01"}, "price", "Price must be between"),
+            ("blank price", {"price": ""}, "price", "This field is required."),
+            ("whitespace price", {"price": "   "}, "price", "This field is required."),
+            ("negative zero price", {"price": "-0"}, "price", "Price must be 0 or greater."),
+            ("negative zero decimal price", {"price": "-0.00"}, "price", "Price must be 0 or greater."),
+            ("negative integer price", {"price": "-1"}, "price", "Price must be 0 or greater."),
+            ("negative decimal price", {"price": "-0.01"}, "price", "Price must be 0 or greater."),
+            ("plus price", {"price": "+10"}, "price", "Price must be a decimal amount"),
+            ("alphabetic price", {"price": "abc"}, "price", "Price must be a decimal amount"),
+            ("mixed price", {"price": "10a"}, "price", "Price must be a decimal amount"),
+            ("currency-symbol price", {"price": "$10"}, "price", "Price must be a decimal amount"),
+            ("comma price", {"price": "1,000"}, "price", "Price must be a decimal amount"),
+            ("trailing decimal point price", {"price": "10."}, "price", "Price must be a decimal amount"),
+            ("leading decimal point price", {"price": ".50"}, "price", "Price must be a decimal amount"),
+            ("three zero decimal price", {"price": "10.000"}, "price", "Price may have at most 2 decimal places."),
+            ("three decimal price", {"price": "10.123"}, "price", "Price may have at most 2 decimal places."),
+            ("lowercase exponent price", {"price": "1e3"}, "price", "Price must be a decimal amount"),
+            ("uppercase exponent price", {"price": "1E3"}, "price", "Price must be a decimal amount"),
+            ("NaN price", {"price": "NaN"}, "price", "Price must be a finite number."),
+            ("Infinity price", {"price": "Infinity"}, "price", "Price must be a finite number."),
+            ("-Infinity price", {"price": "-Infinity"}, "price", "Price must be a finite number."),
             (
-                "price above maximum",
-                {"price": str(product.policy.MAX_PRICE + 1)},
+                "integer price above maximum",
+                {"price": "1000000000000000"},
                 "price",
-                "Price must be between",
+                "Price must be at most",
             ),
-            ("three decimal price", {"price": "1.001"}, "price", "Price may have at most 2 decimal places."),
-            ("NaN price", {"price": "NaN"}, "price", "This field must be numeric."),
-            ("Infinity price", {"price": "Infinity"}, "price", "This field must be numeric."),
-            ("-Infinity price", {"price": "-Infinity"}, "price", "This field must be numeric."),
+            (
+                "decimal price above maximum",
+                {"price": "1000000000000000.00"},
+                "price",
+                "Price must be at most",
+            ),
+            (
+                "maximum price with excess scale",
+                {"price": "999999999999999.999"},
+                "price",
+                "Price may have at most 2 decimal places.",
+            ),
             ("invalid stock", {"stock_quantity": "stock"}, "stock_quantity", "This field must be an integer."),
             ("negative stock", {"stock_quantity": "-1"}, "stock_quantity", "Stock quantity must be between"),
             (
@@ -998,6 +1210,8 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         for label, overrides, field_name, expected_message in cases:
             response = await client.request("POST", "/books", form={**valid_form, **overrides})
             require_field_error(response, field_name, expected_message, label)
+            if field_name == "price":
+                require_original_input(response, "price", overrides["price"], label)
 
         missing_stock_form = dict(valid_form)
         missing_stock_form.pop("stock_quantity")
@@ -1108,7 +1322,7 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
             "author",
             "category",
             "published_year",
-            "price",
+            "price_cents",
             "stock_quantity",
             "isbn",
         ],
@@ -1116,7 +1330,8 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
     )
     require(column_types["author"] == "VARCHAR(100)", "books.author DB type differs")
     require(column_types["category"] == "VARCHAR(100)", "books.category DB type differs")
-    require(column_types["price"] == "FLOAT", "books.price is no longer FLOAT")
+    require("price" not in column_types, "legacy books.price Column still exists")
+    require("INT" in column_types["price_cents"], "books.price_cents is not INTEGER-compatible")
     require(not foreign_keys, f"books still has Foreign Keys: {foreign_keys!r}")
     require(any(row[2] == 1 for row in indexes), "books ISBN Unique index is missing")
 
@@ -1126,7 +1341,7 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
             author="Direct Author",
             category="Direct Category",
             published_year=2025,
-            price=10.0,
+            price_cents=1000,
             stock_quantity=1,
             isbn="9780000000019",
         )
@@ -1135,7 +1350,8 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
         require(valid_book.book_id is not None, "single-model direct insert failed")
         require(valid_book.author == "Direct Author", "direct author string was not stored")
         require(valid_book.category == "Direct Category", "direct category string was not stored")
-        require(isinstance(valid_book.price, float), "Book.price ORM value is no longer float")
+        require(valid_book.price_cents == 1000, "direct cents value was not stored")
+        require(isinstance(valid_book.price_cents, int), "Book.price_cents ORM value is not int")
 
         db.add(
             product.Book(
@@ -1143,7 +1359,7 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
                 author="Other Author",
                 category="Other Category",
                 published_year=2025,
-                price=10.0,
+                price_cents=1000,
                 stock_quantity=1,
                 isbn=valid_book.isbn,
             )
@@ -1155,18 +1371,30 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
         else:
             raise CheckFailure("ISBN Unique constraint did not reject a duplicate")
 
-        valid_after_rollback = product.Book(
-            title="Valid After Rollback",
-            author="Rollback Author",
-            category="Rollback Category",
+        maximum_price_book = product.Book(
+            title="Maximum Cents",
+            author="Maximum Author",
+            category="Maximum Category",
             published_year=2025,
-            price=10.0,
+            price_cents=product.policy.MAX_PRICE_CENTS,
             stock_quantity=1,
             isbn="9780000000040",
         )
-        db.add(valid_after_rollback)
+        db.add(maximum_price_book)
         db.commit()
-        require(valid_after_rollback.book_id is not None, "valid insert after rollback failed")
+        db.refresh(maximum_price_book)
+        require(maximum_price_book.book_id is not None, "valid insert after rollback failed")
+        require(
+            maximum_price_book.price_cents == 99_999_999_999_999_999,
+            "maximum cents did not round-trip exactly",
+        )
+        require(isinstance(maximum_price_book.price_cents, int), "maximum ORM cents is not int")
+        raw_cents, storage_type = db.execute(
+            text("SELECT price_cents, typeof(price_cents) FROM books WHERE book_id = :book_id"),
+            {"book_id": maximum_price_book.book_id},
+        ).one()
+        require(raw_cents == 99_999_999_999_999_999, "raw SQLite maximum cents differs")
+        require(storage_type == "integer", f"raw SQLite cents storage type differs: {storage_type!r}")
 
 
 def main() -> int:
@@ -1215,8 +1443,10 @@ def main() -> int:
                     lambda: check_route_and_phase_contracts(product, original_engine),
                 )
                 run_check("ISBN policy and conversion", lambda: check_isbn_policy(product))
+                run_check("price policy and cents conversion", lambda: check_price_policy(product))
                 run_check("url_for source structure", check_url_for_source)
                 run_check("single-model source structure", check_single_model_source)
+                run_check("price cents source structure", check_price_cents_source)
                 asyncio.run(run_http_checks(product))
                 run_check(
                     "sqlite single table and constraints",
