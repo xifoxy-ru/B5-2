@@ -1,15 +1,11 @@
 from sqlalchemy import select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 
 from app.models.book import Book
 
 
 def get_books(db: Session, q: str | None = None) -> list[Book]:
-    statement = (
-        select(Book)
-        .options(joinedload(Book.author), joinedload(Book.category))
-        .order_by(Book.book_id)
-    )
+    statement = select(Book).order_by(Book.book_id)
 
     if q and q.strip():
         statement = statement.where(Book.title.contains(q.strip()))
@@ -18,11 +14,7 @@ def get_books(db: Session, q: str | None = None) -> list[Book]:
 
 
 def get_book(db: Session, book_id: int) -> Book | None:
-    statement = (
-        select(Book)
-        .options(joinedload(Book.author), joinedload(Book.category))
-        .where(Book.book_id == book_id)
-    )
+    statement = select(Book).where(Book.book_id == book_id)
     return db.scalar(statement)
 
 
@@ -34,8 +26,8 @@ def get_book_by_isbn(db: Session, isbn: str) -> Book | None:
 def create_book(
     db: Session,
     title: str,
-    author_id: int,
-    category_id: int,
+    author: str,
+    category: str,
     published_year: int,
     price: float,
     stock_quantity: int,
@@ -43,8 +35,8 @@ def create_book(
 ) -> Book:
     book = Book(
         title=title,
-        author_id=author_id,
-        category_id=category_id,
+        author=author,
+        category=category,
         published_year=published_year,
         price=price,
         stock_quantity=stock_quantity,
@@ -60,16 +52,16 @@ def update_book(
     db: Session,
     book: Book,
     title: str,
-    author_id: int,
-    category_id: int,
+    author: str,
+    category: str,
     published_year: int,
     price: float,
     stock_quantity: int,
     isbn: str,
 ) -> Book:
     book.title = title
-    book.author_id = author_id
-    book.category_id = category_id
+    book.author = author
+    book.category = category
     book.published_year = published_year
     book.price = price
     book.stock_quantity = stock_quantity

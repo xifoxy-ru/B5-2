@@ -3,13 +3,13 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.author import Author
 from app.models.book import Book
-from app.models.category import Category
-from app.repositories import author_repository, book_repository, category_repository
+from app.repositories import book_repository
 from app.schemas.book import BookFormData
 from app.services.book_validation_policy import (
     ISBNValidationError,
+    MAX_AUTHOR_LENGTH,
+    MAX_CATEGORY_LENGTH,
     MAX_FUTURE_PUBLICATION_YEAR,
     MAX_PRICE,
     MAX_PRICE_DECIMAL_PLACES,
@@ -35,13 +35,6 @@ def list_books(db: Session, q: str | None = None) -> list[Book]:
 
 def get_book_detail(db: Session, book_id: int) -> Book | None:
     return book_repository.get_book(db, book_id)
-
-
-def get_book_form_options(db: Session) -> dict[str, list[Author] | list[Category]]:
-    return {
-        "authors": author_repository.get_authors(db),
-        "categories": category_repository.get_categories(db),
-    }
 
 
 def create_book(db: Session, form_data: BookFormData) -> Book:
@@ -76,8 +69,20 @@ def _validate_book_data(
 
     title = _clean_title(form_data.title, errors)
     isbn = _clean_isbn(form_data.isbn, errors)
-    author_id = _parse_required_int(form_data.author_id, "author_id", errors)
-    category_id = _parse_required_int(form_data.category_id, "category_id", errors)
+    author = _clean_required_text(
+        form_data.author,
+        field_name="author",
+        field_label="Author",
+        max_length=MAX_AUTHOR_LENGTH,
+        errors=errors,
+    )
+    category = _clean_required_text(
+        form_data.category,
+        field_name="category",
+        field_label="Category",
+        max_length=MAX_CATEGORY_LENGTH,
+        errors=errors,
+    )
     published_year = _parse_required_int(form_data.published_year, "published_year", errors)
     price = _parse_required_price(form_data.price, errors)
     stock_quantity = _parse_required_int(form_data.stock_quantity, "stock_quantity", errors)
@@ -90,12 +95,6 @@ def _validate_book_data(
     if stock_quantity is not None and not (MIN_STOCK_QUANTITY <= stock_quantity <= MAX_STOCK_QUANTITY):
         errors["stock_quantity"] = f"Stock quantity must be between {MIN_STOCK_QUANTITY} and {MAX_STOCK_QUANTITY}."
 
-    if author_id is not None and author_repository.get_author(db, author_id) is None:
-        errors["author_id"] = "Selected author does not exist."
-
-    if category_id is not None and category_repository.get_category(db, category_id) is None:
-        errors["category_id"] = "Selected category does not exist."
-
     if isbn:
         existing_book = book_repository.get_book_by_isbn(db, isbn)
         if existing_book and existing_book.book_id != current_book_id:
@@ -106,8 +105,8 @@ def _validate_book_data(
 
     return {
         "title": title,
-        "author_id": author_id,
-        "category_id": category_id,
+        "author": author,
+        "category": category,
         "published_year": published_year,
         "price": float(price),
         "stock_quantity": stock_quantity,
@@ -130,6 +129,29 @@ def _clean_title(
 
     if len(text) > MAX_TITLE_LENGTH:
         errors["title"] = f"Title must be at most {MAX_TITLE_LENGTH} characters."
+        return None
+
+    return text
+
+
+def _clean_required_text(
+    value: str,
+    field_name: str,
+    field_label: str,
+    max_length: int,
+    errors: dict[str, str],
+) -> str | None:
+    if value is None:
+        errors[field_name] = "This field is required."
+        return None
+
+    text = str(value).strip()
+    if not text:
+        errors[field_name] = "This field is required."
+        return None
+
+    if len(text) > max_length:
+        errors[field_name] = f"{field_label} must be at most {max_length} characters."
         return None
 
     return text

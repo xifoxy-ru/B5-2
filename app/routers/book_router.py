@@ -11,6 +11,8 @@ from app.schemas.book import BookFormData
 from app.services import book_service
 from app.services.book_service import BookValidationError
 from app.services.book_validation_policy import (
+    MAX_AUTHOR_LENGTH,
+    MAX_CATEGORY_LENGTH,
     MAX_FUTURE_PUBLICATION_YEAR,
     MAX_ISBN_LENGTH,
     MAX_PRICE,
@@ -30,6 +32,8 @@ router = APIRouter(
 
 BOOK_FORM_VALIDATION_LIMITS = {
     "max_title_length": MAX_TITLE_LENGTH,
+    "max_author_length": MAX_AUTHOR_LENGTH,
+    "max_category_length": MAX_CATEGORY_LENGTH,
     "min_published_year": MIN_PUBLISHED_YEAR,
     "max_published_year": MAX_FUTURE_PUBLICATION_YEAR,
     "min_price": MIN_PRICE,
@@ -42,8 +46,8 @@ BOOK_FORM_VALIDATION_LIMITS = {
 
 def _book_form_data(
     title: Annotated[str, Form()] = "",
-    author_id: Annotated[str, Form()] = "",
-    category_id: Annotated[str, Form()] = "",
+    author: Annotated[str, Form()] = "",
+    category: Annotated[str, Form()] = "",
     published_year: Annotated[str, Form()] = "",
     price: Annotated[str, Form()] = "",
     stock_quantity: Annotated[str, Form()] = "",
@@ -51,8 +55,8 @@ def _book_form_data(
 ) -> BookFormData:
     return BookFormData(
         title=title,
-        author_id=author_id,
-        category_id=category_id,
+        author=author,
+        category=category,
         published_year=published_year,
         price=price,
         stock_quantity=stock_quantity,
@@ -78,13 +82,11 @@ def list_books(
 
 
 @router.get("/new", name="book_new")
-def new_book_form(request: Request, db: Session = Depends(get_db)):
-    options = book_service.get_book_form_options(db)
+def new_book_form(request: Request):
     return templates.TemplateResponse(
         request,
         "book_form.html",
         {
-            **options,
             "mode": "create",
             "form_data": _empty_book_form_data(),
             "errors": {},
@@ -102,12 +104,10 @@ def create_book(
     try:
         created_book = book_service.create_book(db, form_data)
     except BookValidationError as exc:
-        options = book_service.get_book_form_options(db)
         return templates.TemplateResponse(
             request,
             "book_form.html",
             {
-                **options,
                 "mode": "create",
                 "form_data": form_data.to_form_data(),
                 "errors": exc.errors,
@@ -148,12 +148,10 @@ def edit_book_form(
     if book is None:
         return _book_not_found_response(request)
 
-    options = book_service.get_book_form_options(db)
     return templates.TemplateResponse(
         request,
         "book_form.html",
         {
-            **options,
             "mode": "edit",
             "book_id": book_id,
             "form_data": _book_to_form_data(book),
@@ -173,12 +171,10 @@ def update_book(
     try:
         updated_book = book_service.update_book(db, book_id, form_data)
     except BookValidationError as exc:
-        options = book_service.get_book_form_options(db)
         return templates.TemplateResponse(
             request,
             "book_form.html",
             {
-                **options,
                 "mode": "edit",
                 "book_id": book_id,
                 "form_data": form_data.to_form_data(),
@@ -218,8 +214,8 @@ def _book_not_found_response(request: Request):
 def _empty_book_form_data() -> dict[str, str]:
     return {
         "title": "",
-        "author_id": "",
-        "category_id": "",
+        "author": "",
+        "category": "",
         "published_year": "",
         "price": "",
         "stock_quantity": "1",
@@ -230,8 +226,8 @@ def _empty_book_form_data() -> dict[str, str]:
 def _book_to_form_data(book: Book) -> dict[str, Any]:
     return {
         "title": book.title,
-        "author_id": book.author_id,
-        "category_id": book.category_id,
+        "author": book.author,
+        "category": book.category,
         "published_year": book.published_year,
         "price": book.price,
         "stock_quantity": book.stock_quantity,

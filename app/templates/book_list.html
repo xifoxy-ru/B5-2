@@ -34,8 +34,8 @@
         {% for book in books %}
         <tr>
             <td>{{ book.title }}</td>
-            <td>{{ book.author.author_name if book.author else "Unknown author" }}</td>
-            <td>{{ book.category.category_name if book.category else "Unknown category" }}</td>
+            <td>{{ book.author }}</td>
+            <td>{{ book.category }}</td>
             <td>{{ book.published_year }}</td>
             <td>{{ book.price | format_price }}</td>
             <td>{{ book.stock_quantity }}</td>

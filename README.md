@@ -8,10 +8,9 @@ FastAPI로 만든 도서 관리 웹 애플리케이션입니다. Jinja2로 HTML�
 
 - Book 목록 조회 및 제목 검색
 - Book 등록, 상세 조회, 수정, 삭제
-- Author와 Category 선택
+- Author와 Category 문자열 입력
 - 입력값 정규화와 필드별 Validation
 - HTML 형식의 404, 405, 422 오류 화면
-- SQLite Foreign Key enforcement
 - 등록, 수정, 삭제 후 `303 See Other` Redirect
 
 ## 기술 스택
@@ -33,7 +32,7 @@ app/
 ├── database.py             # Engine, Session, DB 초기화와 SQLite 연결 설정
 ├── exception_handlers.py   # HTML 오류 응답 처리
 ├── template_config.py      # Jinja2 Template 설정
-├── models/                 # SQLAlchemy 테이블과 관계 정의
+├── models/                 # Book SQLAlchemy 테이블 정의
 ├── repositories/           # 데이터 조회와 저장
 ├── routers/                # HTTP 요청, Form, 응답과 Redirect 처리
 ├── schemas/                # Book Form 입력 데이터 구조
@@ -62,7 +61,7 @@ Router
 - 중앙 Router는 Home Router와 `/books` prefix를 사용하는 Book Router를 조립합니다.
 - Service는 입력값 Validation, 정규화와 Book 업무 흐름을 담당합니다.
 - Repository는 SQLAlchemy ORM을 통한 데이터 조회와 저장을 담당합니다.
-- Model은 테이블과 관계를 정의합니다.
+- Model은 독립된 Book 테이블을 정의합니다.
 - Template은 Router가 준비한 데이터를 HTML 화면으로 렌더링합니다.
 
 ## 설치
@@ -113,7 +112,7 @@ uvicorn app.main:app --reload
 ## 입력 Validation
 
 - 제목은 필수입니다. 앞뒤 공백을 제거하고 연속 공백을 하나로 정리하며, 최대 200자까지 허용합니다.
-- Author와 Category는 필수 정수 값이며 실제 데이터가 존재하는지 확인합니다.
+- Author와 Category는 Book에 직접 저장하는 필수 문자열입니다. 앞뒤 공백을 제거하며 각각 최대 100자까지 허용합니다.
 - 출판 연도는 1000 이상, 실행 시점의 현재 연도보다 1년 뒤까지 허용합니다.
 - 가격은 0 이상 10,000,000 이하이며 소수점 둘째 자리까지 허용합니다. `NaN`, `Infinity`, `-Infinity`는 허용하지 않습니다.
 - 재고는 0 이상 100,000 이하의 정수여야 합니다.
@@ -127,10 +126,11 @@ uvicorn app.main:app --reload
 ## 데이터베이스
 
 - SQLite 파일은 프로젝트 루트의 `library.db`입니다.
-- SQLAlchemy ORM으로 `authors`, `categories`, `books` 테이블을 사용합니다.
-- Book은 Author와 Category를 Foreign Key로 참조합니다.
-- SQLite 연결이 생성될 때마다 `PRAGMA foreign_keys=ON`을 적용합니다.
-- 애플리케이션 시작 시 필요한 테이블을 생성하고, 누락된 기준 Author와 Category 데이터를 추가합니다.
+- 사용자 테이블은 SQLAlchemy ORM의 `books` 하나입니다.
+- Author와 Category는 별도 Model이나 테이블이 아니라 Book의 문자열 Column입니다.
+- Book은 다른 사용자 정의 Model과 Foreign Key 또는 relationship을 사용하지 않습니다.
+- SQLite 연결이 생성될 때마다 기존 인프라 설정인 `PRAGMA foreign_keys=ON`을 적용합니다.
+- 애플리케이션 시작 시 필요한 `books` 테이블을 생성합니다.
 
 ## 오류 처리
 
@@ -152,7 +152,7 @@ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python scripts/regression_check.py
 - Route, CRUD와 제목 검색
 - Redirect와 HTML 오류 화면
 - 입력값 Validation과 원래 입력값 보존
-- SQLite Foreign Key와 ISBN Unique 제약
+- Book 단일 모델 구조와 ISBN Unique 제약
 - 실제 `library.db`의 존재 여부, 크기와 수정 시간 유지
 
 검증 데이터는 격리된 임시 SQLite DB에 저장되며 실행이 끝나면 정리됩니다.

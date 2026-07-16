@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.config import APP_TITLE
-from app.database import init_db, seed_reference_data
+from app.database import init_db
 from app.exception_handlers import register_exception_handlers
 from app.routers.router import router
 
@@ -12,7 +12,6 @@ from app.routers.router import router
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
-    seed_reference_data()
     yield
 
 

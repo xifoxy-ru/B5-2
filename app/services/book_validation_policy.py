@@ -3,6 +3,8 @@ from decimal import Decimal
 import re
 
 MAX_TITLE_LENGTH = 200
+MAX_AUTHOR_LENGTH = 100
+MAX_CATEGORY_LENGTH = 100
 
 CURRENT_YEAR = date.today().year
 MIN_PUBLISHED_YEAR = 1000

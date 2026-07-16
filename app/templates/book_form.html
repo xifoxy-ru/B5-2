@@ -23,29 +23,15 @@
     </div>
 
     <div class="field">
-        <label for="author_id">Author</label>
-        <select id="author_id" name="author_id">
-            <option value="">Select author</option>
-            {% for author in authors | default([]) %}
-            <option value="{{ author.author_id }}" {% if author.author_id|string == form_data.author_id|string %}selected{% endif %}>
-                {{ author.author_name }}
-            </option>
-            {% endfor %}
-        </select>
-        {% if errors.author_id %}<div class="error">{{ errors.author_id }}</div>{% endif %}
+        <label for="author">Author</label>
+        <input id="author" name="author" type="text" maxlength="{{ validation_limits.max_author_length }}" value="{{ form_data.author | default('') }}">
+        {% if errors.author %}<div class="error">{{ errors.author }}</div>{% endif %}
     </div>
 
     <div class="field">
-        <label for="category_id">Category</label>
-        <select id="category_id" name="category_id">
-            <option value="">Select category</option>
-            {% for category in categories | default([]) %}
-            <option value="{{ category.category_id }}" {% if category.category_id|string == form_data.category_id|string %}selected{% endif %}>
-                {{ category.category_name }}
-            </option>
-            {% endfor %}
-        </select>
-        {% if errors.category_id %}<div class="error">{{ errors.category_id }}</div>{% endif %}
+        <label for="category">Category</label>
+        <input id="category" name="category" type="text" maxlength="{{ validation_limits.max_category_length }}" value="{{ form_data.category | default('') }}">
+        {% if errors.category %}<div class="error">{{ errors.category }}</div>{% endif %}
     </div>
 
     <div class="field">

@@ -4,8 +4,8 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class BookFormData:
     title: str
-    author_id: str
-    category_id: str
+    author: str
+    category: str
     published_year: str
     price: str
     stock_quantity: str
@@ -14,8 +14,8 @@ class BookFormData:
     def to_form_data(self) -> dict[str, str]:
         return {
             "title": self.title,
-            "author_id": self.author_id,
-            "category_id": self.category_id,
+            "author": self.author,
+            "category": self.category,
             "published_year": self.published_year,
             "price": self.price,
             "stock_quantity": self.stock_quantity,

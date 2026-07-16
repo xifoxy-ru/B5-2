@@ -15,7 +15,7 @@ from types import SimpleNamespace
 from typing import Any, Callable, Coroutine
 from urllib.parse import urlencode, urlsplit
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import Float, String, create_engine, event, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -192,9 +192,7 @@ def import_application(temporary_root: Path) -> SimpleNamespace:
         schemas = importlib.import_module("app.schemas.book")
         book_service = importlib.import_module("app.services.book_service")
         policy = importlib.import_module("app.services.book_validation_policy")
-        author_model = importlib.import_module("app.models.author")
         book_model = importlib.import_module("app.models.book")
-        category_model = importlib.import_module("app.models.category")
     finally:
         os.chdir(PROJECT_ROOT)
 
@@ -208,9 +206,7 @@ def import_application(temporary_root: Path) -> SimpleNamespace:
         BookFormData=schemas.BookFormData,
         book_service=book_service,
         policy=policy,
-        Author=author_model.Author,
         Book=book_model.Book,
-        Category=category_model.Category,
     )
 
 
@@ -362,8 +358,8 @@ def check_route_and_phase_contracts(product: SimpleNamespace, original_engine: A
         dto_fields
         == [
             "title",
-            "author_id",
-            "category_id",
+            "author",
+            "category",
             "published_year",
             "price",
             "stock_quantity",
@@ -383,9 +379,40 @@ def check_route_and_phase_contracts(product: SimpleNamespace, original_engine: A
         require(annotation is product.BookFormData, f"{service_name} does not use BookFormData")
 
     require(product.policy.MAX_TITLE_LENGTH == 200, "title maximum is not 200")
+    require(product.policy.MAX_AUTHOR_LENGTH == 100, "author maximum is not 100")
+    require(product.policy.MAX_CATEGORY_LENGTH == 100, "category maximum is not 100")
     require(product.policy.MAX_ISBN_LENGTH == 20, "ISBN maximum is not 20")
+    require(
+        sorted(product.database.Base.metadata.tables) == ["books"],
+        f"unexpected metadata tables: {sorted(product.database.Base.metadata.tables)!r}",
+    )
+    require("app.models.author" not in sys.modules, "Author Model was imported into the product flow")
+    require("app.models.category" not in sys.modules, "Category Model was imported into the product flow")
+    require(
+        [column.key for column in product.Book.__table__.columns]
+        == [
+            "book_id",
+            "title",
+            "author",
+            "category",
+            "published_year",
+            "price",
+            "stock_quantity",
+            "isbn",
+        ],
+        "Book columns differ from the single-model contract",
+    )
+    require(not product.Book.__table__.foreign_keys, "Book still has Foreign Keys")
+    require(not product.Book.__mapper__.relationships, "Book still has ORM relationships")
+    require("author_id" not in product.Book.__table__.c, "Book.author_id still exists")
+    require("category_id" not in product.Book.__table__.c, "Book.category_id still exists")
+    require(isinstance(product.Book.__table__.c.author.type, String), "Book.author is not a String")
+    require(isinstance(product.Book.__table__.c.category.type, String), "Book.category is not a String")
+    require(product.Book.__table__.c.author.type.length == 100, "Book.author length differs")
+    require(product.Book.__table__.c.category.type.length == 100, "Book.category length differs")
     require(product.Book.__table__.c.title.type.length == 200, "Book.title model length differs")
     require(product.Book.__table__.c.isbn.type.length == 20, "Book.isbn model length differs")
+    require(isinstance(product.Book.__table__.c.price.type, Float), "Book.price is no longer Float")
     require(
         event.contains(
             original_engine,
@@ -424,6 +451,37 @@ def check_url_for_source() -> None:
     )
     require("/books/books" not in template_source + route_source, "double prefix literal found")
     require('action=""' not in template_source, "empty form action found")
+
+
+def check_single_model_source() -> None:
+    active_paths = [
+        APPLICATION_DIRECTORY / "database.py",
+        APPLICATION_DIRECTORY / "main.py",
+        APPLICATION_DIRECTORY / "models" / "__init__.py",
+        APPLICATION_DIRECTORY / "models" / "book.py",
+        APPLICATION_DIRECTORY / "repositories" / "book_repository.py",
+        APPLICATION_DIRECTORY / "routers" / "book_router.py",
+        APPLICATION_DIRECTORY / "schemas" / "book.py",
+        APPLICATION_DIRECTORY / "services" / "book_service.py",
+        APPLICATION_DIRECTORY / "templates" / "book_form.html",
+        APPLICATION_DIRECTORY / "templates" / "book_list.html",
+        APPLICATION_DIRECTORY / "templates" / "book_detail.html",
+    ]
+    source = "\n".join(path.read_text() for path in active_paths)
+    forbidden_tokens = (
+        "author_id",
+        "category_id",
+        "ForeignKey(",
+        "relationship(",
+        "joinedload(",
+        "author_repository",
+        "category_repository",
+        "seed_reference_data",
+        "book.author.",
+        "book.category.",
+    )
+    for token in forbidden_tokens:
+        require(token not in source, f"active Book flow still contains {token!r}")
 
 
 def html_targets(body: str) -> HTMLTargets:
@@ -556,6 +614,21 @@ def require_stored_isbn(
         )
 
 
+def require_stored_book_text(
+    product: SimpleNamespace,
+    book_id: int,
+    *,
+    author: str,
+    category: str,
+    label: str,
+) -> None:
+    with product.database.SessionLocal() as db:
+        book = db.get(product.Book, book_id)
+        require(book is not None, f"{label}: stored Book is missing")
+        require(book.author == author, f"{label}: stored author differs: {book.author!r}")
+        require(book.category == category, f"{label}: stored category differs: {book.category!r}")
+
+
 async def run_http_checks(product: SimpleNamespace) -> None:
     client = DirectASGIClient(product.app)
     state: dict[str, Any] = {}
@@ -583,6 +656,12 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require_paths(new_form, links={"/books"}, actions={"/books"}, label="create form")
         require_original_input(new_form, "stock_quantity", "1", "create stock default")
         require('maxlength="200"' in new_form.body, "title maxlength is not rendered as 200")
+        require('name="author"' in new_form.body, "author text input is missing")
+        require('name="category"' in new_form.body, "category text input is missing")
+        require('maxlength="100"' in field_fragment(new_form.body, "author"), "author maxlength is not 100")
+        require('maxlength="100"' in field_fragment(new_form.body, "category"), "category maxlength is not 100")
+        require('name="author_id"' not in new_form.body, "legacy author_id field is rendered")
+        require('name="category_id"' not in new_form.body, "legacy category_id field is rendered")
         require('maxlength="20"' in new_form.body, "ISBN maxlength is not rendered as 20")
         require('pattern="[0-9Xx-]+"' in new_form.body, "ISBN input pattern does not allow X and x")
 
@@ -590,8 +669,8 @@ async def run_http_checks(product: SimpleNamespace) -> None:
 
     first_form = {
         "title": "  Regression   Alpha  ",
-        "author_id": "1",
-        "category_id": "1",
+        "author": "  Jane Austen  ",
+        "category": "  Fiction  ",
         "published_year": "2025",
         "price": "12.50",
         "stock_quantity": "3",
@@ -615,8 +694,17 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require_html(first_detail, 200, "created Book detail")
         require("Regression Alpha" in first_detail.body, "normalized title was not stored")
         require("Regression   Alpha" not in first_detail.body, "title whitespace was not normalized")
+        require("Jane Austen" in first_detail.body, "author text is missing from Book detail")
+        require("Fiction" in first_detail.body, "category text is missing from Book detail")
         require("9780306406157" in first_detail.body, "ISBN-10 was not rendered as canonical ISBN-13")
         require_stored_isbn(product, state["first_id"], "9780306406157", "numeric ISBN-10 Create")
+        require_stored_book_text(
+            product,
+            state["first_id"],
+            author="Jane Austen",
+            category="Fiction",
+            label="Book text Create",
+        )
         require_paths(
             first_detail,
             links={"/books", f"{first_path}/edit"},
@@ -634,6 +722,8 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         search = await client.request("GET", "/books", query=urlencode({"q": "Alpha"}))
         require_html(search, 200, "GET /books?q=Alpha")
         require("Regression Alpha" in search.body, "matching search result is missing")
+        require("Jane Austen" in search.body, "author text is missing from Book list")
+        require("Fiction" in search.body, "category text is missing from Book list")
         require("Search Other" not in search.body, "non-matching search result was not filtered")
         require_paths(search, links={first_path}, actions={"/books"}, label="search result")
 
@@ -655,6 +745,8 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         same_isbn_form = {
             **first_form,
             "title": "Regression Updated",
+            "author": "George Orwell",
+            "category": "Dystopian Fiction",
             "isbn": "0-306-40615-2",
         }
         update = await client.request("POST", f"{first_path}/edit", form=same_isbn_form)
@@ -664,7 +756,16 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         updated_detail = await client.request("GET", first_path)
         require_html(updated_detail, 200, "updated Book detail")
         require("Regression Updated" in updated_detail.body, "updated title is missing")
+        require("George Orwell" in updated_detail.body, "updated author is missing")
+        require("Dystopian Fiction" in updated_detail.body, "updated category is missing")
         require_stored_isbn(product, first_id, "9780306406157", "self ISBN expression Update")
+        require_stored_book_text(
+            product,
+            first_id,
+            author="George Orwell",
+            category="Dystopian Fiction",
+            label="Book text Update",
+        )
 
         duplicate_form = {**same_isbn_form, "isbn": second_form["isbn"]}
         duplicate = await client.request("POST", f"{first_path}/edit", form=duplicate_form)
@@ -673,15 +774,17 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         preserved_update = {
             **same_isbn_form,
             "title": "  Update   Original  ",
-            "author_id": "999997",
-            "category_id": "999998",
+            "author": "   ",
+            "category": "c" * 101,
             "price": "bad-update-price",
             "isbn": "bad update isbn",
         }
         invalid_update = await client.request("POST", f"{first_path}/edit", form=preserved_update)
-        require_field_error(invalid_update, "author_id", "Selected author does not exist.", "Update author")
-        require_field_error(invalid_update, "category_id", "Selected category does not exist.", "Update category")
+        require_field_error(invalid_update, "author", "This field is required.", "Update author")
+        require_field_error(invalid_update, "category", "Category must be at most 100 characters.", "Update category")
         require_original_input(invalid_update, "title", preserved_update["title"], "Update title")
+        require_original_input(invalid_update, "author", preserved_update["author"], "Update author")
+        require_original_input(invalid_update, "category", preserved_update["category"], "Update category")
         require_original_input(invalid_update, "price", preserved_update["price"], "Update price")
         require_original_input(invalid_update, "isbn", preserved_update["isbn"], "Update ISBN")
         require_form_context_preserved(
@@ -776,8 +879,8 @@ async def run_http_checks(product: SimpleNamespace) -> None:
     async def validation() -> None:
         valid_form = {
             "title": "Validation Base",
-            "author_id": "1",
-            "category_id": "1",
+            "author": "Validation Author",
+            "category": "Validation Category",
             "published_year": "2025",
             "price": "10.00",
             "stock_quantity": "1",
@@ -786,14 +889,28 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         long_isbn = "1-2-3-4-5-6-7-8-90123"
         require(len(long_isbn) == 21, "long ISBN test input is not 21 characters")
         require(len(long_isbn.replace("-", "")) == 13, "long ISBN test input is not 13 digits")
+        with product.database.SessionLocal() as db:
+            book_count_before = db.query(product.Book).count()
 
         cases = [
             ("blank title", {"title": ""}, "title", "This field is required."),
             ("long title", {"title": "x" * 201}, "title", "Title must be at most 200 characters."),
-            ("blank Author", {"author_id": ""}, "author_id", "This field is required."),
-            ("blank Category", {"category_id": ""}, "category_id", "This field is required."),
-            ("missing Author", {"author_id": "999999"}, "author_id", "Selected author does not exist."),
-            ("missing Category", {"category_id": "999999"}, "category_id", "Selected category does not exist."),
+            ("blank Author", {"author": ""}, "author", "This field is required."),
+            ("blank Category", {"category": ""}, "category", "This field is required."),
+            ("whitespace Author", {"author": "   "}, "author", "This field is required."),
+            ("whitespace Category", {"category": "   "}, "category", "This field is required."),
+            (
+                "long Author",
+                {"author": "a" * 101},
+                "author",
+                "Author must be at most 100 characters.",
+            ),
+            (
+                "long Category",
+                {"category": "c" * 101},
+                "category",
+                "Category must be at most 100 characters.",
+            ),
             ("invalid year", {"published_year": "year"}, "published_year", "This field must be an integer."),
             (
                 "year below range",
@@ -890,37 +1007,36 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         preserved_create = {
             **valid_form,
             "title": "  Create   Original  ",
-            "author_id": "999997",
-            "category_id": "999998",
+            "author": "   ",
+            "category": "c" * 101,
             "price": "bad-create-price",
             "isbn": "bad create isbn",
         }
         preserved_response = await client.request("POST", "/books", form=preserved_create)
         require_field_error(
             preserved_response,
-            "author_id",
-            "Selected author does not exist.",
+            "author",
+            "This field is required.",
             "preserved Create author",
         )
         require_field_error(
             preserved_response,
-            "category_id",
-            "Selected category does not exist.",
+            "category",
+            "Category must be at most 100 characters.",
             "preserved Create category",
         )
         require_original_input(preserved_response, "title", preserved_create["title"], "Create title")
+        require_original_input(preserved_response, "author", preserved_create["author"], "Create author")
+        require_original_input(preserved_response, "category", preserved_create["category"], "Create category")
         require_original_input(preserved_response, "price", preserved_create["price"], "Create price")
         require_original_input(preserved_response, "isbn", preserved_create["isbn"], "Create ISBN")
         require_form_context_preserved(product, book_id=None, form=preserved_create)
 
-        require(
-            f'value="{preserved_create["author_id"]}"' not in preserved_response.body,
-            "nonexistent Author unexpectedly rendered as an option",
-        )
-        require(
-            f'value="{preserved_create["category_id"]}"' not in preserved_response.body,
-            "nonexistent Category unexpectedly rendered as an option",
-        )
+        with product.database.SessionLocal() as db:
+            require(
+                db.query(product.Book).count() == book_count_before,
+                "invalid author/category Form stored a Book",
+            )
 
     await run_async_check("validation and original input preservation", validation)
 
@@ -968,13 +1084,47 @@ async def run_http_checks(product: SimpleNamespace) -> None:
 def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> None:
     with temporary_engine.connect() as connection:
         pragma_value = connection.scalar(text("PRAGMA foreign_keys"))
+        table_names = list(
+            connection.scalars(
+                text(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+                    "ORDER BY name"
+                )
+            ).all()
+        )
+        table_info = connection.execute(text("PRAGMA table_info(books)")).all()
+        foreign_keys = connection.execute(text("PRAGMA foreign_key_list(books)")).all()
+        indexes = connection.execute(text("PRAGMA index_list(books)")).all()
+
     require(pragma_value == 1, f"PRAGMA foreign_keys expected 1, got {pragma_value}")
+    require(table_names == ["books"], f"unexpected user tables: {table_names!r}")
+    column_types = {row[1]: row[2] for row in table_info}
+    require(
+        list(column_types)
+        == [
+            "book_id",
+            "title",
+            "author",
+            "category",
+            "published_year",
+            "price",
+            "stock_quantity",
+            "isbn",
+        ],
+        f"books columns differ: {list(column_types)!r}",
+    )
+    require(column_types["author"] == "VARCHAR(100)", "books.author DB type differs")
+    require(column_types["category"] == "VARCHAR(100)", "books.category DB type differs")
+    require(column_types["price"] == "FLOAT", "books.price is no longer FLOAT")
+    require(not foreign_keys, f"books still has Foreign Keys: {foreign_keys!r}")
+    require(any(row[2] == 1 for row in indexes), "books ISBN Unique index is missing")
 
     with product.database.SessionLocal() as db:
         valid_book = product.Book(
-            title="Direct Valid FK",
-            author_id=1,
-            category_id=1,
+            title="Direct Single Model",
+            author="Direct Author",
+            category="Direct Category",
             published_year=2025,
             price=10.0,
             stock_quantity=1,
@@ -982,62 +1132,16 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
         )
         db.add(valid_book)
         db.commit()
-        require(valid_book.book_id is not None, "valid direct FK insert failed")
-
-        db.add(
-            product.Book(
-                title="Invalid Author FK",
-                author_id=999999,
-                category_id=1,
-                published_year=2025,
-                price=10.0,
-                stock_quantity=1,
-                isbn="9780000000026",
-            )
-        )
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-        else:
-            raise CheckFailure("invalid Author FK was accepted")
-
-        db.add(
-            product.Book(
-                title="Invalid Category FK",
-                author_id=1,
-                category_id=999999,
-                published_year=2025,
-                price=10.0,
-                stock_quantity=1,
-                isbn="9780000000033",
-            )
-        )
-        try:
-            db.commit()
-        except IntegrityError:
-            db.rollback()
-        else:
-            raise CheckFailure("invalid Category FK was accepted")
-
-        valid_after_rollback = product.Book(
-            title="Valid After Rollback",
-            author_id=1,
-            category_id=1,
-            published_year=2025,
-            price=10.0,
-            stock_quantity=1,
-            isbn="9780000000040",
-        )
-        db.add(valid_after_rollback)
-        db.commit()
-        require(valid_after_rollback.book_id is not None, "valid insert after rollback failed")
+        require(valid_book.book_id is not None, "single-model direct insert failed")
+        require(valid_book.author == "Direct Author", "direct author string was not stored")
+        require(valid_book.category == "Direct Category", "direct category string was not stored")
+        require(isinstance(valid_book.price, float), "Book.price ORM value is no longer float")
 
         db.add(
             product.Book(
                 title="Duplicate Direct ISBN",
-                author_id=1,
-                category_id=1,
+                author="Other Author",
+                category="Other Category",
                 published_year=2025,
                 price=10.0,
                 stock_quantity=1,
@@ -1051,22 +1155,18 @@ def check_database_behavior(product: SimpleNamespace, temporary_engine: Any) -> 
         else:
             raise CheckFailure("ISBN Unique constraint did not reject a duplicate")
 
-        invalid_references = product.BookFormData(
-            title="Service Invalid References",
-            author_id="999997",
-            category_id="999998",
-            published_year="2025",
-            price="10.00",
-            stock_quantity="1",
-            isbn="9780000000057",
+        valid_after_rollback = product.Book(
+            title="Valid After Rollback",
+            author="Rollback Author",
+            category="Rollback Category",
+            published_year=2025,
+            price=10.0,
+            stock_quantity=1,
+            isbn="9780000000040",
         )
-        try:
-            product.book_service.create_book(db, invalid_references)
-        except product.book_service.BookValidationError as exc:
-            require("author_id" in exc.errors, "Service Author existence validation is missing")
-            require("category_id" in exc.errors, "Service Category existence validation is missing")
-        else:
-            raise CheckFailure("Service accepted nonexistent Author/Category references")
+        db.add(valid_after_rollback)
+        db.commit()
+        require(valid_after_rollback.book_id is not None, "valid insert after rollback failed")
 
 
 def main() -> int:
@@ -1108,17 +1208,18 @@ def main() -> int:
                 os.chdir(PROJECT_ROOT)
                 run_check(
                     "isolated database setup",
-                    lambda: (product.database.init_db(), product.database.seed_reference_data()),
+                    product.database.init_db,
                 )
                 run_check(
-                    "route and Phase 1-5 contracts",
+                    "route and single-model contracts",
                     lambda: check_route_and_phase_contracts(product, original_engine),
                 )
                 run_check("ISBN policy and conversion", lambda: check_isbn_policy(product))
                 run_check("url_for source structure", check_url_for_source)
+                run_check("single-model source structure", check_single_model_source)
                 asyncio.run(run_http_checks(product))
                 run_check(
-                    "sqlite foreign keys and constraints",
+                    "sqlite single table and constraints",
                     lambda: check_database_behavior(product, temporary_engine),
                 )
             finally:
