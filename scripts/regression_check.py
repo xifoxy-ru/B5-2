@@ -193,6 +193,7 @@ def import_application(temporary_root: Path) -> SimpleNamespace:
         schemas = importlib.import_module("app.schemas.book")
         book_service = importlib.import_module("app.services.book_service")
         policy = importlib.import_module("app.services.book_validation_policy")
+        template_config = importlib.import_module("app.template_config")
         book_model = importlib.import_module("app.models.book")
     finally:
         os.chdir(PROJECT_ROOT)
@@ -207,6 +208,7 @@ def import_application(temporary_root: Path) -> SimpleNamespace:
         BookFormData=schemas.BookFormData,
         book_service=book_service,
         policy=policy,
+        template_config=template_config,
         Book=book_model.Book,
     )
 
@@ -370,6 +372,24 @@ def check_price_policy(product: SimpleNamespace) -> None:
         actual_cents = product.book_service._parse_required_price_cents(raw_price, errors)
         require(actual_cents is None, f"{raw_price!r}: invalid price produced cents")
         require(expected_message in errors.get("price", ""), f"{raw_price!r}: unexpected price error {errors!r}")
+
+
+def check_price_display(product: SimpleNamespace) -> None:
+    display_cases = {
+        0: "$0.00",
+        1: "$0.01",
+        100: "$1.00",
+        1050: "$10.50",
+        123456: "$1,234.56",
+        99_999_999_999_999_999: "$999,999,999,999,999.99",
+    }
+    for price_cents, expected_display in display_cases.items():
+        actual_display = product.template_config.format_price(price_cents)
+        require(
+            actual_display == expected_display,
+            f"{price_cents} cents display differs: {actual_display!r}",
+        )
+    require(product.template_config.format_price(None) == "$0.00", "price display fallback differs")
 
 
 def check_route_and_phase_contracts(product: SimpleNamespace, original_engine: Any) -> None:
@@ -579,6 +599,13 @@ def check_price_cents_source() -> None:
     ):
         require(re.search(pattern, source) is None, f"active price flow still contains {label}")
     require(source.count("price_cents") >= 8, "price_cents is not connected across active layers")
+    list_source = (APPLICATION_DIRECTORY / "templates" / "book_list.html").read_text()
+    detail_source = (APPLICATION_DIRECTORY / "templates" / "book_detail.html").read_text()
+    form_source = (APPLICATION_DIRECTORY / "templates" / "book_form.html").read_text()
+    require("book.price_cents | format_price" in list_source, "Book list price Filter differs")
+    require("book.price_cents | format_price" in detail_source, "Book detail price Filter differs")
+    require("format_price" not in form_source, "Book Form uses the display price Filter")
+    require("price_cents" not in form_source, "Book Form exposes cents directly")
 
 
 def html_targets(body: str) -> HTMLTargets:
@@ -815,7 +842,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require("Regression   Alpha" not in first_detail.body, "title whitespace was not normalized")
         require("Jane Austen" in first_detail.body, "author text is missing from Book detail")
         require("Fiction" in first_detail.body, "category text is missing from Book detail")
-        require("12.50" in first_detail.body, "price cents were not rendered as the original amount")
+        require("$12.50" in first_detail.body, "price cents were not rendered with currency format")
         require("9780306406157" in first_detail.body, "ISBN-10 was not rendered as canonical ISBN-13")
         require_stored_isbn(product, state["first_id"], "9780306406157", "numeric ISBN-10 Create")
         require_stored_price_cents(product, state["first_id"], 1250, "price Create")
@@ -881,7 +908,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
         require("Regression Updated" in updated_detail.body, "updated title is missing")
         require("George Orwell" in updated_detail.body, "updated author is missing")
         require("Dystopian Fiction" in updated_detail.body, "updated category is missing")
-        require("1,234.56" in updated_detail.body, "updated price cents were not rendered as an amount")
+        require("$1,234.56" in updated_detail.body, "updated price cents were not rendered with currency format")
         require_stored_isbn(product, first_id, "9780306406157", "self ISBN expression Update")
         require_stored_price_cents(product, first_id, 123456, "price Update")
         require_stored_book_text(
@@ -937,6 +964,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
             ("10.00", 1000),
             ("10.5", 1050),
             ("00010.50", 1050),
+            ("1234.56", 123456),
             ("999999999999999", 99_999_999_999_999_900),
             ("999999999999999.99", 99_999_999_999_999_999),
         ]
@@ -959,6 +987,14 @@ async def run_http_checks(product: SimpleNamespace) -> None:
                 f"price Create {raw_price!r}",
             )
 
+            detail = await client.request("GET", created_path)
+            require_html(detail, 200, f"price Detail {raw_price!r}")
+            expected_display = f"${Decimal(expected_cents) / Decimal('100'):,.2f}"
+            require(
+                expected_display in detail.body,
+                f"price Detail {raw_price!r} missing {expected_display!r}",
+            )
+
             edit_form = await client.request("GET", f"{created_path}/edit")
             require_html(edit_form, 200, f"price Edit Form {raw_price!r}")
             expected_form_value = format(Decimal(expected_cents) / Decimal("100"), ".2f")
@@ -968,6 +1004,9 @@ async def run_http_checks(product: SimpleNamespace) -> None:
                 expected_form_value,
                 f"restored price Form {raw_price!r}",
             )
+            price_fragment = field_fragment(edit_form.body, "price")
+            require("$" not in price_fragment, f"price Edit Form {raw_price!r} contains currency symbol")
+            require("," not in price_fragment, f"price Edit Form {raw_price!r} contains comma")
 
             updated = await client.request(
                 "POST",
@@ -985,6 +1024,19 @@ async def run_http_checks(product: SimpleNamespace) -> None:
                 expected_cents,
                 f"price Update {raw_price!r}",
             )
+
+        price_list = await client.request("GET", "/books")
+        require_html(price_list, 200, "price display Book list")
+        for expected_display in (
+            "$0.00",
+            "$10.50",
+            "$1,234.56",
+            "$999,999,999,999,999.99",
+        ):
+            require(expected_display in price_list.body, f"Book list missing price display {expected_display!r}")
+        require("$1,050.00" not in price_list.body, "1050 cents was displayed as $1,050.00")
+        require(">1050<" not in price_list.body, "raw 1050 cents was displayed in Book list")
+        require(">1,050.00<" not in price_list.body, "Book list displayed price without currency symbol")
 
     await run_async_check("price cents Create and Update flow", price_cents_create_update_flow)
 
@@ -1223,7 +1275,7 @@ async def run_http_checks(product: SimpleNamespace) -> None:
             "title": "  Create   Original  ",
             "author": "   ",
             "category": "c" * 101,
-            "price": "bad-create-price",
+            "price": "00010.50",
             "isbn": "bad create isbn",
         }
         preserved_response = await client.request("POST", "/books", form=preserved_create)
@@ -1444,6 +1496,7 @@ def main() -> int:
                 )
                 run_check("ISBN policy and conversion", lambda: check_isbn_policy(product))
                 run_check("price policy and cents conversion", lambda: check_price_policy(product))
+                run_check("price display formatting", lambda: check_price_display(product))
                 run_check("url_for source structure", check_url_for_source)
                 run_check("single-model source structure", check_single_model_source)
                 run_check("price cents source structure", check_price_cents_source)

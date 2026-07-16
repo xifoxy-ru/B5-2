@@ -131,6 +131,8 @@ uvicorn app.main:app --reload
 - Author와 Category는 별도 Model이나 테이블이 아니라 Book의 문자열 Column입니다.
 - Book은 다른 사용자 정의 Model과 Foreign Key 또는 relationship을 사용하지 않습니다.
 - 가격은 SQLite 부동소수점 정밀도 문제를 피하기 위해 최소 화폐 단위인 cents 정수로 `price_cents` Column에 저장합니다.
+- 가격은 DB에서 `123456` cents, Form에서 `1234.56`, 목록과 상세 화면에서 `$1,234.56`처럼 구분해 사용합니다.
+- 화면 가격은 `$`, 천 단위 쉼표와 소수점 이하 두 자리로 표시하며 Form에는 `$`와 쉼표 없는 십진 문자열을 사용합니다.
 - SQLite 연결이 생성될 때마다 기존 인프라 설정인 `PRAGMA foreign_keys=ON`을 적용합니다.
 - 애플리케이션 시작 시 필요한 `books` 테이블을 생성합니다.
 
