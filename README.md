@@ -42,7 +42,8 @@ sql/
 └── seed.sql                # 화면 확인용 Book 예제 데이터
 scripts/
 ├── db_cli.py               # 기본 DB seed와 reset 명령
-└── regression_check.py     # 직접 실행하는 회귀 검증 스크립트
+├── regression_check.py     # 회귀 검증 실행 진입점
+└── regression/             # 기능별 회귀 검증 모듈
 Makefile                    # 실행, 검증, 정리와 DB 작업 명령
 requirements.txt            # Python Dependency 목록
 library.db                  # SQLite 데이터베이스 파일
