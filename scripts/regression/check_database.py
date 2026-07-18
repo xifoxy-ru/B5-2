@@ -124,6 +124,18 @@ def check_model_contracts(context: RegressionContext) -> None:
 
 
 def check_single_model_source() -> None:
+    removed_paths = [
+        APPLICATION_DIRECTORY / "models" / "author.py",
+        APPLICATION_DIRECTORY / "models" / "category.py",
+        APPLICATION_DIRECTORY / "repositories" / "author_repository.py",
+        APPLICATION_DIRECTORY / "repositories" / "category_repository.py",
+    ]
+    for removed_path in removed_paths:
+        require(
+            not removed_path.exists(),
+            f"legacy Author/Category file remains: {removed_path}",
+        )
+
     active_paths = [
         APPLICATION_DIRECTORY / "database.py",
         APPLICATION_DIRECTORY / "main.py",
