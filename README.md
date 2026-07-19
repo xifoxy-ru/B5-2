@@ -15,7 +15,8 @@ FastAPI로 만든 도서 관리 웹 애플리케이션입니다. Jinja2로 HTML�
 
 ## 기술 스택
 
-- Python
+- Python 3.12
+- uv
 - FastAPI 0.139.0
 - Uvicorn 0.51.0
 - SQLAlchemy 2.0.51
@@ -44,8 +45,10 @@ scripts/
 ├── db_cli.py               # 기본 DB seed와 reset 명령
 ├── regression_check.py     # 회귀 검증 실행 진입점
 └── regression/             # 기능별 회귀 검증 모듈
+pyproject.toml              # Python 버전 범위와 직접 Dependency 선언
+uv.lock                     # 전체 Dependency 해석 결과 잠금
+.python-version             # uv가 사용할 Python 3.12 지정
 Makefile                    # 실행, 검증, 정리와 DB 작업 명령
-requirements.txt            # Python Dependency 목록
 library.db                  # SQLite 데이터베이스 파일
 ```
 
@@ -69,37 +72,52 @@ Router
 - Model은 독립된 Book 테이블을 정의합니다.
 - Template은 Router가 준비한 데이터를 HTML 화면으로 렌더링합니다.
 
-## 설치
+## 사전 요구사항
 
-프로젝트 루트에서 가상환경을 만들고 Dependency를 설치합니다.
+시스템 Python은 필요하지 않으며, uv만 설치하면 됩니다.
+
+macOS/Linux:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+설치 여부를 확인합니다.
+
+```bash
+uv --version
+```
+
+## 최초 설정
+
+프로젝트 루트에서 다음 명령을 실행합니다.
+
+```bash
+make setup
+```
+
+`make setup`은 uv로 Python 3.12를 설치하고 `uv.lock`에 맞춰 Dependency를 동기화합니다. 프로젝트의 `.venv`는 uv가 관리합니다. `pyproject.toml`은 직접 Dependency를 선언하고, `uv.lock`은 간접 Dependency를 포함한 전체 버전을 잠급니다.
 
 ## 실행
 
-가상환경을 활성화한 경우:
-
 ```bash
-uvicorn app.main:app --reload
-```
-
-가상환경을 활성화하지 않은 경우:
-
-```bash
-.venv/bin/uvicorn app.main:app --reload
+make run
 ```
 
 ## Make 명령
 
-프로젝트 작업에 사용하는 공개 명령은 다음 여섯 가지입니다.
+프로젝트 작업에 사용하는 공개 명령은 다음 일곱 가지입니다.
 
 | 명령 | 역할 |
 |---|---|
 | `make help` | 사용할 수 있는 명령과 설명 출력 |
+| `make setup` | Python 3.12 설치와 Dependency 동기화 |
 | `make run` | FastAPI 개발 서버 실행 |
 | `make test` | 전체 회귀 검증 실행 |
 | `make clean` | Python 캐시와 운영체제 메타데이터 정리 |
@@ -169,7 +187,7 @@ uvicorn app.main:app --reload
 다음 명령으로 전체 회귀 검증을 한 번에 실행합니다.
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 .venv/bin/python scripts/regression_check.py
+make test
 ```
 
 회귀 스크립트는 다음 항목을 확인합니다.

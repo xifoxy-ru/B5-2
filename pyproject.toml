@@ -1,0 +1,16 @@
+[project]
+name = "b5-2-book-crud"
+version = "0.1.0"
+description = "FastAPI, SQLAlchemy, Jinja2, and SQLite Book CRUD application"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi==0.139.0",
+    "jinja2==3.1.6",
+    "python-multipart==0.0.32",
+    "sqlalchemy==2.0.51",
+    "uvicorn==0.51.0",
+]
+
+[tool.uv]
+package = false
